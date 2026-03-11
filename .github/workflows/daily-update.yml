@@ -48,8 +48,9 @@ jobs:
 
       - name: Generate both archives
         if: steps.gate.outputs.should_run == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python -u tools/generate_arxiv_portal.py
-
       - name: Commit updated output
         if: steps.gate.outputs.should_run == 'true'
         run: |
@@ -62,3 +63,4 @@ jobs:
           fi
           git commit -m "Update arXiv daily archives"
           git push
+
