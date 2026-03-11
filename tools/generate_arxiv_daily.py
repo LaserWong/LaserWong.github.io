@@ -538,8 +538,6 @@ def build_archive_html(entries: list[dict[str, Any]]) -> str:
     .card {{ padding: 18px 20px; border-radius: 22px; background: rgba(255,255,255,0.88); border: 1px solid rgba(69,49,32,0.14); }}
     .card h2 {{ margin: 0 0 10px; font-size: 22px; }}
     .card a {{ color: #8f3d2e; text-decoration: none; }}
-    .actions {{ margin-top: 18px; display: flex; gap: 14px; flex-wrap: wrap; }}
-    .button {{ display: inline-block; padding: 10px 14px; border-radius: 999px; background: #8f3d2e; color: white; text-decoration: none; }}
   </style>
 </head>
 <body>
@@ -547,9 +545,6 @@ def build_archive_html(entries: list[dict[str, Any]]) -> str:
     <section class="hero">
       <h1>arXiv Daily Archive</h1>
       <p>点击下面的日期打开当天生成的页面。输出目录固定为 <code>arxiv_daily</code>，每日结果会写入各自的日期子目录。</p>
-      <div class="actions">
-        <a class="button" href="./latest.html">打开最新一期</a>
-      </div>
     </section>
     <section class="grid">{cards}</section>
   </div>
