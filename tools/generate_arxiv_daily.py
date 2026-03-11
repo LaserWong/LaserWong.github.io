@@ -384,9 +384,18 @@ def fallback_translated_abstract() -> str:
     return "中文摘要自动翻译失败，请展开查看英文原文。"
 
 
-def enrich_papers(papers: list[dict[str, str]], enable_translation: bool) -> list[dict[str, Any]]:
-    cache: dict[str, str | None] = {}
+def enrich_papers(
+    papers: list[dict[str, str]],
+    enable_translation: bool,
+    enable_gemini_summary: bool = False,
+    gemini_api_key: str = "",
+    gemini_model: str = DEFAULT_GEMINI_MODEL,
+    gemini_request_interval_seconds: float = 1.0,
+) -> list[dict[str, Any]]:
+    translation_cache: dict[str, str | None] = {}
+    gemini_cache: dict[str, str | None] = {}
     author_cache: dict[str, list[dict[str, Any]]] = {}
+    gemini_rate_state = {"last_request_at": 0.0}
     result: list[dict[str, Any]] = []
     total = len(papers)
     for index, paper in enumerate(papers, start=1):
@@ -394,9 +403,29 @@ def enrich_papers(papers: list[dict[str, str]], enable_translation: bool) -> lis
         text = normalize(f"{paper['title']} {paper['abstract']}")
         is_experimental = is_target_experimental_paper(paper)
         paper_type = infer_type(paper["category"], text, is_experimental=is_experimental)
-        translated_abstract = translate_full_abstract(paper["abstract"], cache, enable_translation)
-        if not translated_abstract:
-            translated_abstract = fallback_translated_abstract()
+
+        summary = None
+        summary_source = "translation-fallback"
+        if enable_gemini_summary and gemini_api_key:
+            summary = summarize_with_gemini(
+                title=paper["title"],
+                abstract=paper["abstract"],
+                cache=gemini_cache,
+                api_key=gemini_api_key,
+                model=gemini_model,
+                request_interval_seconds=gemini_request_interval_seconds,
+                rate_state=gemini_rate_state,
+            )
+            if summary:
+                summary_source = "gemini"
+
+        if not summary:
+            summary = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
+            if summary:
+                summary_source = "translation"
+            else:
+                summary = fallback_translated_abstract()
+                summary_source = "translation-fallback"
 
         authors = author_cache.get(paper["id"])
         if authors is None:
@@ -408,15 +437,14 @@ def enrich_papers(papers: list[dict[str, str]], enable_translation: bool) -> lis
             {
                 **paper,
                 "type": paper_type,
-                "summary": translated_abstract,
+                "summary": summary,
+                "summary_source": summary_source,
                 "authors": authors,
                 "featured_authors": featured_authors,
                 "author_count": len(authors),
             }
         )
     return result
-
-
 def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     papers_json = json.dumps(papers, ensure_ascii=False)
     template = """<!doctype html>
@@ -767,6 +795,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
 
