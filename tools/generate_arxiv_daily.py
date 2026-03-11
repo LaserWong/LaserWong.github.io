@@ -3,10 +3,8 @@
 import argparse
 import datetime as dt
 import json
-import os
 import re
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,8 +17,6 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "arxiv_daily_config.json"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Codex-Arxiv-Daily/1.0"
 TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
-GEMINI_ENDPOINT_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 THEORY_ONLY_CATEGORIES = {"hep-th", "math-ph"}
 EXPERIMENTAL_TOPIC_KEYWORDS = {
     "superconducting qubit", "superconducting qubits", "superconducting circuit",
@@ -86,110 +82,6 @@ def fetch_text(url: str, timeout: int = 30) -> str:
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8")
 
-
-def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 30) -> Any:
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"User-Agent": USER_AGENT, **headers},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def extract_gemini_text(payload: dict[str, Any]) -> str | None:
-    candidates = payload.get("candidates") or []
-    if not candidates:
-        return None
-    parts = ((candidates[0].get("content") or {}).get("parts") or [])
-    chunks = [part.get("text", "") for part in parts if isinstance(part, dict) and part.get("text")]
-    text = " ".join(chunks).strip()
-    return text or None
-
-
-def normalize_summary_text(text: str) -> str:
-    cleaned = clean_space(text)
-    cleaned = cleaned.strip("\"' “”‘’")
-    sentence_parts = re.split(r"(?<=[。！？])", cleaned)
-    first_sentence = next((part.strip() for part in sentence_parts if part.strip()), cleaned)
-    if first_sentence and first_sentence[-1] not in "。！？":
-        first_sentence += "。"
-    return first_sentence
-
-
-def summarize_with_gemini(
-    title: str,
-    abstract: str,
-    cache: dict[str, str | None],
-    api_key: str,
-    model: str,
-    request_interval_seconds: float,
-    rate_state: dict[str, float],
-) -> str | None:
-    if not api_key:
-        return None
-
-    cache_key = f"{title}\n\n{abstract}"
-    if cache_key in cache:
-        return cache[cache_key]
-
-    elapsed = time.monotonic() - rate_state.get("last_request_at", 0.0)
-    if elapsed < request_interval_seconds:
-        time.sleep(request_interval_seconds - elapsed)
-
-    prompt = (
-        "You are a physics paper assistant. Read the title and abstract and return exactly one Chinese sentence. "
-        "Keep it concise, at most 50 Chinese characters when possible. Focus on the research target, method, or key result. "
-        "Do not repeat the title. Do not use bullet points. Do not add quotation marks or extra explanation."
-    )
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": f"Title: {title}\nAbstract: {abstract}\n\nReturn one Chinese sentence only."
-                    }
-                ]
-            }
-        ],
-        "systemInstruction": {"parts": [{"text": prompt}]},
-        "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.9,
-            "maxOutputTokens": 80,
-        },
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key,
-    }
-    url = GEMINI_ENDPOINT_TEMPLATE.format(model=model)
-
-    for attempt in range(3):
-        try:
-            response = post_json(url, payload, headers=headers, timeout=30)
-            rate_state["last_request_at"] = time.monotonic()
-            summary = extract_gemini_text(response)
-            cache[cache_key] = normalize_summary_text(summary) if summary else None
-            return cache[cache_key]
-        except urllib.error.HTTPError as exc:
-            rate_state["last_request_at"] = time.monotonic()
-            if exc.code in {429, 500, 502, 503, 504} and attempt < 2:
-                time.sleep(2 ** attempt)
-                continue
-            cache[cache_key] = None
-            return None
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
-            rate_state["last_request_at"] = time.monotonic()
-            if attempt < 2:
-                time.sleep(2 ** attempt)
-                continue
-            cache[cache_key] = None
-            return None
-
-    cache[cache_key] = None
-    return None
 
 def parse_new_submissions(category: str, html_text: str) -> list[dict[str, str]]:
     soup = BeautifulSoup(html_text, "html.parser")
@@ -387,15 +279,9 @@ def fallback_translated_abstract() -> str:
 def enrich_papers(
     papers: list[dict[str, str]],
     enable_translation: bool,
-    enable_gemini_summary: bool = False,
-    gemini_api_key: str = "",
-    gemini_model: str = DEFAULT_GEMINI_MODEL,
-    gemini_request_interval_seconds: float = 1.0,
 ) -> list[dict[str, Any]]:
     translation_cache: dict[str, str | None] = {}
-    gemini_cache: dict[str, str | None] = {}
     author_cache: dict[str, list[dict[str, Any]]] = {}
-    gemini_rate_state = {"last_request_at": 0.0}
     result: list[dict[str, Any]] = []
     total = len(papers)
     for index, paper in enumerate(papers, start=1):
@@ -403,29 +289,9 @@ def enrich_papers(
         text = normalize(f"{paper['title']} {paper['abstract']}")
         is_experimental = is_target_experimental_paper(paper)
         paper_type = infer_type(paper["category"], text, is_experimental=is_experimental)
-
-        summary = None
-        summary_source = "translation-fallback"
-        if enable_gemini_summary and gemini_api_key:
-            summary = summarize_with_gemini(
-                title=paper["title"],
-                abstract=paper["abstract"],
-                cache=gemini_cache,
-                api_key=gemini_api_key,
-                model=gemini_model,
-                request_interval_seconds=gemini_request_interval_seconds,
-                rate_state=gemini_rate_state,
-            )
-            if summary:
-                summary_source = "gemini"
-
+        summary = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
         if not summary:
-            summary = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
-            if summary:
-                summary_source = "translation"
-            else:
-                summary = fallback_translated_abstract()
-                summary_source = "translation-fallback"
+            summary = fallback_translated_abstract()
 
         authors = author_cache.get(paper["id"])
         if authors is None:
@@ -438,7 +304,6 @@ def enrich_papers(
                 **paper,
                 "type": paper_type,
                 "summary": summary,
-                "summary_source": summary_source,
                 "authors": authors,
                 "featured_authors": featured_authors,
                 "author_count": len(authors),
@@ -546,7 +411,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
       <h1>Daily ArXiv Selection</h1>
       <p>
         数据来自 arXiv 当天的 <code>cond-mat</code>、<code>hep-th</code>、<code>math-ph</code>、<code>quant-ph</code> 四个分类页，口径限定为 <code>New submissions</code>。
-        In the main body, Gemini generates a one-sentence Chinese summary when available; if AI summarization is unavailable, the page falls back to a translated Chinese abstract. Expand below to view the original English abstract.
+        页面主体展示英文摘要的完整中文翻译；下拉可以查看英文原版摘要。
       </p>
       <div class="stats" id="stats"></div>
     </section>
@@ -632,7 +497,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
           ${renderAuthors(paper)}
           <p class="summary">${escapeHtml(paper.summary)}</p>
           <details><summary>查看英文原文摘要</summary><p>${escapeHtml(paper.abstract)}</p></details>
-          <footer><span>${paper.summary_source === "gemini" ? "Gemini summary" : "Translation fallback"}</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer>
+          <footer><span>中文摘要翻译</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer>
         </article>`;
       }).join("");
     }
@@ -732,10 +597,6 @@ def generate(date_str: str | None = None) -> Path:
     day_dir = output_root / date_value.isoformat()
     day_dir.mkdir(parents=True, exist_ok=True)
     translation_enabled = bool(config.get("enable_summary_translation", True))
-    gemini_summary_enabled = bool(config.get("enable_gemini_summary", True))
-    gemini_model = str(config.get("gemini_model", DEFAULT_GEMINI_MODEL)).strip() or DEFAULT_GEMINI_MODEL
-    gemini_request_interval_seconds = float(config.get("gemini_request_interval_seconds", 1.0))
-    gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
     log(f"[1/6] Preparing digest for {date_value.isoformat()}")
     fetched: list[dict[str, str]] = []
@@ -751,18 +612,8 @@ def generate(date_str: str | None = None) -> Path:
     filtered = [paper for paper in fetched if should_include(paper)]
     log(f"      kept {len(filtered)} papers after filtering")
 
-    summary_mode = "gemini" if gemini_summary_enabled and gemini_api_key else "translation"
-    if gemini_summary_enabled and not gemini_api_key:
-        log("[info] GEMINI_API_KEY is missing; falling back to translated abstracts")
-    log(f"[4/6] Enriching papers (summary={summary_mode}, translation={'on' if translation_enabled else 'off'}, authors=on)")
-    papers = enrich_papers(
-        filtered,
-        translation_enabled,
-        gemini_summary_enabled,
-        gemini_api_key,
-        gemini_model,
-        gemini_request_interval_seconds,
-    )
+    log(f"[4/6] Enriching papers (summary=translation, authors=on)")
+    papers = enrich_papers(filtered, translation_enabled)
     papers.sort(key=lambda item: (categories.index(item["category"]), item["id"]))
 
     log(f"[5/6] Writing files into {day_dir}")
