@@ -9,7 +9,7 @@ GitHub Pages source for the personal `github-personal` site. This repository onl
 - `run_arxiv_daily.sh`: local macOS / Linux launcher with Python bootstrap
 - `requirements.txt`: Python dependency list
 - `arxiv_daily/`: generated digest output and archive pages
-- `index.html`: repository-root redirect to the archive page
+- `index.html`: repository-root archive page
 - `.github/workflows/daily-update.yml`: GitHub Actions workflow for daily regeneration
 
 ## Repository name
@@ -29,7 +29,7 @@ Use this exact repository name for the personal Pages site:
 ## Publish
 1. Upload the full contents of this folder to the repository root of `LaserWong.github.io`.
 2. GitHub Pages will serve the repository root.
-3. The root page redirects to `arxiv_daily/index.html`.
+3. The root page directly shows the arXiv archive directory.
 4. If GitHub Actions are enabled, the workflow will regenerate the digest daily and commit new output.
 
 ## Schedule

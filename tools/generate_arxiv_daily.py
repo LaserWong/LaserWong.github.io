@@ -515,11 +515,13 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     return template.replace("__DATE__", date_str).replace("__PAPERS_JSON__", papers_json)
 
 
-def build_archive_html(entries: list[dict[str, Any]]) -> str:
+def build_archive_html(entries: list[dict[str, Any]], link_prefix: str = ".") -> str:
+    base = link_prefix.rstrip("/") or "."
     items = []
     for entry in entries:
+        href = f"{base}/{entry['date']}/index.html" if base != "." else f"./{entry['date']}/index.html"
         items.append(
-            f'<article class="card"><h2><a href="./{entry["date"]}/index.html">{entry["date"]}</a></h2><p>{entry["count"]} 篇 · 分类：{", ".join(entry["categories"])}。</p></article>'
+            f'<article class="card"><h2><a href="{href}">{entry["date"]}</a></h2><p>{entry["count"]} 篇 · 分类：{", ".join(entry["categories"])}。</p></article>'
         )
     cards = "\n".join(items) if items else '<p>还没有生成任何日报。</p>'
     return f"""<!doctype html>
@@ -563,7 +565,9 @@ def write_archive(output_root: Path) -> None:
         categories = sorted({paper["category"] for paper in papers})
         entries.append({"date": date_dir.name, "count": len(papers), "categories": categories})
 
-    (output_root / "index.html").write_text(build_archive_html(entries), encoding="utf-8-sig")
+    archive_html = build_archive_html(entries)
+    (output_root / "index.html").write_text(archive_html, encoding="utf-8-sig")
+    (ROOT / "index.html").write_text(build_archive_html(entries, link_prefix=f"./{output_root.name}"), encoding="utf-8-sig")
     if entries:
         latest_target = f"./{entries[0]['date']}/index.html"
         latest_html = f"""<!doctype html>
@@ -580,7 +584,6 @@ def write_archive(output_root: Path) -> None:
 </html>
 """
         (output_root / "latest.html").write_text(latest_html, encoding="utf-8-sig")
-
 
 def generate(date_str: str | None = None) -> Path:
     config = load_config()
