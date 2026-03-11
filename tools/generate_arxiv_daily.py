@@ -316,7 +316,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>arXiv __DATE__ 理论 / 数值 / 实验论文清单</title>
+  <title>arXiv __DATE__ · Daily ArXiv Selection</title>
   <style>
     :root {
       --bg: #f6f1e8;
@@ -407,7 +407,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
   <div class="shell">
     <section class="hero">
       <div class="eyebrow">arXiv Daily Digest · __DATE__</div>
-      <h1>理论 / 数值 / 实验 arXiv 论文清单</h1>
+      <h1>Daily ArXiv Selection</h1>
       <p>
         数据来自 arXiv 当天的 <code>cond-mat</code>、<code>hep-th</code>、<code>math-ph</code>、<code>quant-ph</code> 四个分类页，口径限定为 <code>New submissions</code>。
         除理论和数值文章外，页面还会额外纳入与量子模拟、量子计算、冷原子、离子阱、超导量子比特相关的目标实验论文。中文摘要为自动翻译；下拉查看 arXiv 英文原文摘要。
@@ -646,4 +646,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
