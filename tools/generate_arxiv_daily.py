@@ -567,7 +567,6 @@ def write_archive(output_root: Path) -> None:
 
     archive_html = build_archive_html(entries)
     (output_root / "index.html").write_text(archive_html, encoding="utf-8-sig")
-    (ROOT / "index.html").write_text(build_archive_html(entries, link_prefix=f"./{output_root.name}"), encoding="utf-8-sig")
     if entries:
         latest_target = f"./{entries[0]['date']}/index.html"
         latest_html = f"""<!doctype html>

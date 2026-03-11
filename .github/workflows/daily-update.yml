@@ -1,4 +1,4 @@
-name: Update arXiv Daily
+﻿name: Update arXiv Daily
 
 on:
   workflow_dispatch:
@@ -46,19 +46,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Generate digest
+      - name: Generate both archives
         if: steps.gate.outputs.should_run == 'true'
-        run: python -u tools/generate_arxiv_daily.py
+        run: python -u tools/generate_arxiv_portal.py
 
       - name: Commit updated output
         if: steps.gate.outputs.should_run == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add arxiv_daily index.html .nojekyll
+          git add arxiv_daily arxiv_daily_cornell index.html .nojekyll
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Update arXiv daily digest"
+          git commit -m "Update arXiv daily archives"
           git push

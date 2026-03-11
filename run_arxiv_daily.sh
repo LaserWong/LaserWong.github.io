@@ -1,10 +1,10 @@
-#!/usr/bin/env sh
+﻿#!/usr/bin/env sh
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 VENV="$ROOT/.venv"
 REQ="$ROOT/requirements.txt"
-SCRIPT="$ROOT/tools/generate_arxiv_daily.py"
+SCRIPT="$ROOT/tools/generate_arxiv_portal.py"
 
 log() {
   printf '%s\n' "$1"
@@ -84,12 +84,13 @@ log "[arXiv Daily] Installing / updating dependencies..."
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r "$REQ"
 
-log "[arXiv Daily] Running generator..."
+log "[arXiv Daily] Running both archive generators..."
 "$VENV/bin/python" -u "$SCRIPT" "$@"
 
-if [ -f "$ROOT/arxiv_daily/latest.html" ]; then
+if [ -f "$ROOT/index.html" ]; then
   case "$(uname -s)" in
-    Darwin) open "$ROOT/arxiv_daily/latest.html" >/dev/null 2>&1 & ;;
-    Linux) command -v xdg-open >/dev/null 2>&1 && xdg-open "$ROOT/arxiv_daily/latest.html" >/dev/null 2>&1 & ;;
+    Darwin) open "$ROOT/index.html" >/dev/null 2>&1 & ;;
+    Linux) command -v xdg-open >/dev/null 2>&1 && xdg-open "$ROOT/index.html" >/dev/null 2>&1 & ;;
   esac
 fi
+

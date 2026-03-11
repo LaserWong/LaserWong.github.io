@@ -1,9 +1,9 @@
-@echo off
+﻿@echo off
 setlocal
 set "ROOT=%~dp0"
 set "VENV=%ROOT%.venv"
 set "REQ=%ROOT%requirements.txt"
-set "SCRIPT=%ROOT%tools\generate_arxiv_daily.py"
+set "SCRIPT=%ROOT%tools\generate_arxiv_portal.py"
 set "BOOTSTRAP="
 
 call :log "[arXiv Daily] Starting..."
@@ -85,7 +85,7 @@ if %errorlevel% neq 0 (
   exit /b 1
 )
 
-call :log "[arXiv Daily] Running generator..."
+call :log "[arXiv Daily] Running both archive generators..."
 call "%VENV%\Scripts\python.exe" -u "%SCRIPT%" %*
 if %errorlevel% neq 0 (
   echo.
@@ -96,12 +96,13 @@ if %errorlevel% neq 0 (
 
 echo.
 call :log "[arXiv Daily] Generation finished."
-if exist "%ROOT%arxiv_daily\latest.html" (
-  call :log "[arXiv Daily] Opening latest report..."
-  start "" "%ROOT%arxiv_daily\latest.html"
+if exist "%ROOT%index.html" (
+  call :log "[arXiv Daily] Opening portal page..."
+  start "" "%ROOT%index.html"
 )
 exit /b 0
 
 :log
 echo %~1
 exit /b 0
+
