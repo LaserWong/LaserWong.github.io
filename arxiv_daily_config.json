@@ -7,5 +7,9 @@
   ],
   "only_new_submissions": true,
   "enable_summary_translation": true,
-  "output_root": "arxiv_daily"
+  "output_root": "arxiv_daily",
+  "enable_deepseek_summary": true,
+  "deepseek_model": "deepseek-reasoner",
+  "deepseek_max_tokens": 512,
+  "deepseek_timeout_seconds": 90
 }

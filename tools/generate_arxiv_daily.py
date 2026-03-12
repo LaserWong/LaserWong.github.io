@@ -3,8 +3,10 @@
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +19,23 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "arxiv_daily_config.json"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Codex-Arxiv-Daily/1.0"
 TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-reasoner"
+DEFAULT_DEEPSEEK_MAX_TOKENS = 512
+DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 90
+DEEPSEEK_SYSTEM_PROMPT = """You are a senior physics editor writing concise Physical Review Letters-style research summaries in Chinese.
+Return JSON only with exactly these keys: what_done, selling_point, outlook.
+Requirements:
+- Use simplified Chinese only.
+- Each value must be exactly one polished sentence.
+- what_done: state what the paper actually did.
+- selling_point: state the main technical or physical novelty and why it matters.
+- outlook: state the most defensible future direction, implication, or inspiration.
+- Stay faithful to the title and abstract.
+- Use publication-grade wording: precise, restrained, and informative.
+- Avoid hype, equations unless essential, markdown, bullet points, and repeating the title verbatim.
+- Keep the final JSON compact; all three sentences together should usually stay within about 220 Chinese characters.
+""".strip()
 THEORY_ONLY_CATEGORIES = {"hep-th", "math-ph"}
 EXPERIMENTAL_TOPIC_KEYWORDS = {
     "superconducting qubit", "superconducting qubits", "superconducting circuit",
@@ -81,6 +100,139 @@ def fetch_text(url: str, timeout: int = 30) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8")
+
+
+def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 60) -> dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"User-Agent": USER_AGENT, **headers},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def normalize_summary_sentence(text: str) -> str:
+    cleaned = clean_space(text)
+    cleaned = cleaned.strip("\"' “”…‘’")
+    cleaned = re.sub(r"^[\d一-鿿]+[\.、:：\)）\]]\s*", "", cleaned)
+    sentence_parts = re.split(r"(?<=[。！？])", cleaned)
+    first_sentence = next((part.strip() for part in sentence_parts if part.strip()), cleaned)
+    if first_sentence and first_sentence[-1] not in "。！？":
+        first_sentence += "。"
+    return first_sentence
+
+
+def extract_json_object(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    candidates = [stripped]
+    match = re.search(r"\{.*\}", stripped, flags=re.S)
+    if match:
+        candidates.append(match.group(0))
+
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def format_deepseek_summary(payload: dict[str, Any]) -> str | None:
+    fields: list[str] = []
+    for key in ("what_done", "selling_point", "outlook"):
+        value = payload.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return None
+        fields.append(normalize_summary_sentence(value))
+    return "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(fields, start=1))
+
+
+def summarize_with_deepseek(
+    title: str,
+    abstract: str,
+    cache: dict[str, str | None],
+    api_key: str,
+    model: str,
+    max_tokens: int,
+    timeout_seconds: int,
+) -> tuple[str | None, dict[str, int]]:
+    usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    if not api_key:
+        return None, usage_totals
+
+    cache_key = f"{title}\n\n{abstract}"
+    if cache_key in cache:
+        return cache[cache_key], usage_totals
+
+    user_prompt = (
+        "Summarize the following physics paper for a research reader. "
+        "Return JSON only with keys what_done, selling_point, outlook.\n"
+        "Sentence 1: what the paper did.\n"
+        "Sentence 2: the main technical or physical selling point.\n"
+        "Sentence 3: the most defensible outlook, implication, or inspiration.\n"
+        "Each field must contain exactly one Chinese sentence.\n"
+        "Keep the final JSON concise and PRL-style.\n\n"
+        f"Title: {title}\n"
+        f"Abstract: {abstract}"
+    )
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": DEEPSEEK_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    for attempt in range(3):
+        try:
+            response = post_json(DEEPSEEK_ENDPOINT, payload, headers=headers, timeout=timeout_seconds)
+            usage = response.get("usage") if isinstance(response, dict) else {}
+            for key in usage_totals:
+                usage_totals[key] += int((usage or {}).get(key, 0) or 0)
+
+            choices = response.get("choices") or []
+            if not choices:
+                cache[cache_key] = None
+                return None, usage_totals
+
+            choice = choices[0]
+            if choice.get("finish_reason") == "length":
+                cache[cache_key] = None
+                return None, usage_totals
+
+            message = choice.get("message") or {}
+            parsed = extract_json_object((message.get("content") or "").strip())
+            cache[cache_key] = format_deepseek_summary(parsed) if parsed else None
+            return cache[cache_key], usage_totals
+        except urllib.error.HTTPError as exc:
+            if exc.code in {429, 500, 502, 503, 504} and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            cache[cache_key] = None
+            return None, usage_totals
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            cache[cache_key] = None
+            return None, usage_totals
+
+    cache[cache_key] = None
+    return None, usage_totals
 
 
 def parse_new_submissions(category: str, html_text: str) -> list[dict[str, str]]:
@@ -279,9 +431,23 @@ def fallback_translated_abstract() -> str:
 def enrich_papers(
     papers: list[dict[str, str]],
     enable_translation: bool,
-) -> list[dict[str, Any]]:
+    enable_deepseek_summary: bool = False,
+    deepseek_api_key: str = "",
+    deepseek_model: str = DEFAULT_DEEPSEEK_MODEL,
+    deepseek_max_tokens: int = DEFAULT_DEEPSEEK_MAX_TOKENS,
+    deepseek_timeout_seconds: int = DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     translation_cache: dict[str, str | None] = {}
+    deepseek_cache: dict[str, str | None] = {}
     author_cache: dict[str, list[dict[str, Any]]] = {}
+    deepseek_usage = {
+        "calls": 0,
+        "successes": 0,
+        "fallbacks": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
     result: list[dict[str, Any]] = []
     total = len(papers)
     for index, paper in enumerate(papers, start=1):
@@ -289,9 +455,35 @@ def enrich_papers(
         text = normalize(f"{paper['title']} {paper['abstract']}")
         is_experimental = is_target_experimental_paper(paper)
         paper_type = infer_type(paper["category"], text, is_experimental=is_experimental)
-        summary = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
+
+        summary = None
+        summary_source = "translation-fallback"
+        if enable_deepseek_summary and deepseek_api_key:
+            deepseek_usage["calls"] += 1
+            summary, usage = summarize_with_deepseek(
+                title=paper["title"],
+                abstract=paper["abstract"],
+                cache=deepseek_cache,
+                api_key=deepseek_api_key,
+                model=deepseek_model,
+                max_tokens=deepseek_max_tokens,
+                timeout_seconds=deepseek_timeout_seconds,
+            )
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                deepseek_usage[key] += usage.get(key, 0)
+            if summary:
+                deepseek_usage["successes"] += 1
+                summary_source = "deepseek"
+
         if not summary:
-            summary = fallback_translated_abstract()
+            summary = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
+            if summary:
+                summary_source = "translation"
+            else:
+                summary = fallback_translated_abstract()
+                summary_source = "translation-fallback"
+            if enable_deepseek_summary:
+                deepseek_usage["fallbacks"] += 1
 
         authors = author_cache.get(paper["id"])
         if authors is None:
@@ -304,12 +496,13 @@ def enrich_papers(
                 **paper,
                 "type": paper_type,
                 "summary": summary,
+                "summary_source": summary_source,
                 "authors": authors,
                 "featured_authors": featured_authors,
                 "author_count": len(authors),
             }
         )
-    return result
+    return result, deepseek_usage
 def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     papers_json = json.dumps(papers, ensure_ascii=False)
     template = """<!doctype html>
@@ -411,7 +604,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
       <h1>Daily ArXiv Selection</h1>
       <p>
         数据来自 arXiv 当天的 <code>cond-mat</code>、<code>hep-th</code>、<code>math-ph</code>、<code>quant-ph</code> 四个分类页，口径限定为 <code>New submissions</code>。
-        页面主体展示英文摘要的完整中文翻译；下拉可以查看英文原版摘要。
+        页面主体优先展示 DeepSeek reasoner 生成的三句话中文总结；若 API 不可用或返回异常，则回退为英文摘要的完整中文翻译；下拉可以查看英文原版摘要。
       </p>
       <div class="stats" id="stats"></div>
     </section>
@@ -497,7 +690,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
           ${renderAuthors(paper)}
           <p class="summary">${escapeHtml(paper.summary)}</p>
           <details><summary>查看英文原文摘要</summary><p>${escapeHtml(paper.abstract)}</p></details>
-          <footer><span>中文摘要翻译</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer>
+          <footer><span>${paper.summary_source === "deepseek" ? "DeepSeek PRL-style summary" : (paper.summary_source === "translation" ? "中文摘要翻译" : "中文摘要翻译回退")}</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer>
         </article>`;
       }).join("");
     }
@@ -597,6 +790,11 @@ def generate(date_str: str | None = None) -> Path:
     day_dir = output_root / date_value.isoformat()
     day_dir.mkdir(parents=True, exist_ok=True)
     translation_enabled = bool(config.get("enable_summary_translation", True))
+    deepseek_summary_enabled = bool(config.get("enable_deepseek_summary", True))
+    deepseek_model = str(config.get("deepseek_model", DEFAULT_DEEPSEEK_MODEL)).strip() or DEFAULT_DEEPSEEK_MODEL
+    deepseek_max_tokens = int(config.get("deepseek_max_tokens", DEFAULT_DEEPSEEK_MAX_TOKENS))
+    deepseek_timeout_seconds = int(config.get("deepseek_timeout_seconds", DEFAULT_DEEPSEEK_TIMEOUT_SECONDS))
+    deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 
     log(f"[1/6] Preparing digest for {date_value.isoformat()}")
     fetched: list[dict[str, str]] = []
@@ -612,9 +810,26 @@ def generate(date_str: str | None = None) -> Path:
     filtered = [paper for paper in fetched if should_include(paper)]
     log(f"      kept {len(filtered)} papers after filtering")
 
-    log(f"[4/6] Enriching papers (summary=translation, authors=on)")
-    papers = enrich_papers(filtered, translation_enabled)
+    summary_mode = "deepseek" if deepseek_summary_enabled and deepseek_api_key else "translation"
+    if deepseek_summary_enabled and not deepseek_api_key:
+        log("[info] DEEPSEEK_API_KEY is missing; falling back to translated abstracts")
+    log(f"[4/6] Enriching papers (summary={summary_mode}, authors=on)")
+    papers, deepseek_usage = enrich_papers(
+        filtered,
+        translation_enabled,
+        deepseek_summary_enabled,
+        deepseek_api_key,
+        deepseek_model,
+        deepseek_max_tokens,
+        deepseek_timeout_seconds,
+    )
     papers.sort(key=lambda item: (categories.index(item["category"]), item["id"]))
+    if deepseek_usage["calls"]:
+        log(
+            f"[usage] DeepSeek prompt_tokens={deepseek_usage['prompt_tokens']} "
+            f"completion_tokens={deepseek_usage['completion_tokens']} total_tokens={deepseek_usage['total_tokens']} "
+            f"successes={deepseek_usage['successes']} fallbacks={deepseek_usage['fallbacks']}"
+        )
 
     log(f"[5/6] Writing files into {day_dir}")
     (day_dir / "papers.json").write_text(json.dumps(papers, ensure_ascii=False, indent=2), encoding="utf-8-sig")
