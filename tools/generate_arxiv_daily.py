@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import datetime as dt
@@ -21,7 +21,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
 DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-reasoner"
-DEFAULT_DEEPSEEK_MAX_TOKENS = 2048
+DEFAULT_DEEPSEEK_MAX_TOKENS = 3072
 DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 90
 DEEPSEEK_SYSTEM_PROMPT = """You are a senior physics editor writing concise Physical Review Letters-style summaries in Chinese.
 Write for advanced physics readers.
@@ -106,14 +106,19 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeou
         return json.loads(response.read().decode("utf-8"))
 
 
+def merge_usage_totals(target: dict[str, int], source: dict[str, Any]) -> None:
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        target[key] += int(source.get(key, 0) or 0)
+
+
 def normalize_summary_sentence(text: str) -> str:
     cleaned = clean_space(text)
-    cleaned = cleaned.strip("\"' “”…‘’")
-    cleaned = re.sub(r"^[\d一-鿿]+[\.、:：\)）\]]\s*", "", cleaned)
-    sentence_parts = re.split(r"(?<=[。！？])", cleaned)
+    cleaned = cleaned.strip("\"' \u201c\u201d\u2026\u2018\u2019")
+    cleaned = re.sub(r"^(?:\d+|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+)[\.\u3001:\uff1a\)\uff09\]]\s*", "", cleaned)
+    sentence_parts = re.split(r"(?<=[\u3002\uff01\uff1f])", cleaned)
     first_sentence = next((part.strip() for part in sentence_parts if part.strip()), cleaned)
-    if first_sentence and first_sentence[-1] not in "。！？":
-        first_sentence += "。"
+    if first_sentence and first_sentence[-1] not in "\u3002\uff01\uff1f":
+        first_sentence += "\u3002"
     return first_sentence
 
 
@@ -198,6 +203,100 @@ def parse_deepseek_summary(text: str) -> str | None:
     return parse_numbered_summary(text)
 
 
+def build_deepseek_user_prompt(title: str, abstract: str, compact: bool = False) -> str:
+    compact_clause = (
+        "- Keep each line compact and concrete; do not exceed about 70 Chinese characters per line.\n"
+        if compact
+        else "- Total final answer should be about 180-260 Chinese characters.\n"
+    )
+    return (
+        "Read the following physics paper title and abstract carefully.\n"
+        "Write a Physical Review Letters-style Chinese summary for physics researchers.\n"
+        "Return exactly three lines and nothing else.\n"
+        "Line 1 must start with '1. ' and state what the paper did.\n"
+        "Line 2 must start with '2. ' and state the main technical or physical selling point.\n"
+        "Line 3 must start with '3. ' and state the most defensible outlook, implication, or inspiration.\n"
+        "Requirements:\n"
+        "- Use simplified Chinese only.\n"
+        "- One sentence per line.\n"
+        f"{compact_clause}"
+        "- Be precise, restrained, and information-dense.\n"
+        "- Stay faithful to the title and abstract.\n"
+        "- Avoid generic praise, markdown, JSON, code fences, or repeating the title verbatim.\n"
+        "Example output:\n"
+        "1. \u8be5\u5de5\u4f5c\u63d0\u51fa\u4e86\u4e00\u4e2a\u7814\u7a76\u67d0\u7c7b\u91cf\u5b50\u591a\u4f53\u95ee\u9898\u7684\u7406\u8bba\u6216\u6570\u503c\u6846\u67b6\u3002\n"
+        "2. \u5176\u5356\u70b9\u5728\u4e8e\u63ed\u793a\u4e86\u51b3\u5b9a\u5173\u952e\u7269\u7406\u884c\u4e3a\u7684\u673a\u5236\u6216\u6280\u672f\u4f18\u52bf\u3002\n"
+        "3. \u8fd9\u4e3a\u76f8\u5173\u6a21\u578b\u3001\u5e73\u53f0\u6216\u540e\u7eed\u5b9e\u9a8c\u4e0e\u7406\u8bba\u7814\u7a76\u63d0\u4f9b\u4e86\u660e\u786e\u542f\u53d1\u3002\n\n"
+        f"Title: {title}\n"
+        f"Abstract: {abstract}"
+    )
+
+
+def summarize_with_deepseek_once(
+    title: str,
+    abstract: str,
+    api_key: str,
+    model: str,
+    max_tokens: int,
+    timeout_seconds: int,
+    compact_prompt: bool = False,
+) -> tuple[str | None, dict[str, int], str]:
+    usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    if not api_key:
+        return None, usage_totals, "no_key"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": DEEPSEEK_SYSTEM_PROMPT},
+            {"role": "user", "content": build_deepseek_user_prompt(title, abstract, compact=compact_prompt)},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+        "stream": False,
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    for attempt in range(3):
+        try:
+            response = post_json(DEEPSEEK_ENDPOINT, payload, headers=headers, timeout=timeout_seconds)
+            usage = response.get("usage") if isinstance(response, dict) else {}
+            merge_usage_totals(usage_totals, usage or {})
+
+            choices = response.get("choices") or []
+            if not choices:
+                return None, usage_totals, "empty_choices"
+
+            choice = choices[0]
+            if choice.get("finish_reason") == "length":
+                return None, usage_totals, "length"
+
+            message = choice.get("message") or {}
+            content = (message.get("content") or "").strip()
+            if not content:
+                return None, usage_totals, "empty_content"
+
+            parsed = parse_deepseek_summary(content)
+            if parsed:
+                return parsed, usage_totals, "ok"
+            return None, usage_totals, "parse_failure"
+        except urllib.error.HTTPError as exc:
+            if exc.code in {429, 500, 502, 503, 504} and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            return None, usage_totals, f"http_{exc.code}"
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            return None, usage_totals, "request_failure"
+
+    return None, usage_totals, "request_failure"
+
+
 def summarize_with_deepseek(
     title: str,
     abstract: str,
@@ -215,84 +314,34 @@ def summarize_with_deepseek(
     if cache_key in cache:
         return cache[cache_key], usage_totals, "cached"
 
-    user_prompt = (
-        "Read the following physics paper title and abstract carefully.\n"
-        "Write a Physical Review Letters-style Chinese summary for physics researchers.\n"
-        "Return exactly three lines and nothing else.\n"
-        "Line 1 must start with '1. ' and state what the paper did.\n"
-        "Line 2 must start with '2. ' and state the main technical or physical selling point.\n"
-        "Line 3 must start with '3. ' and state the most defensible outlook, implication, or inspiration.\n"
-        "Requirements:\n"
-        "- Use simplified Chinese only.\n"
-        "- One sentence per line.\n"
-        "- Total final answer should be about 180-260 Chinese characters.\n"
-        "- Be precise, restrained, and information-dense.\n"
-        "- Stay faithful to the title and abstract.\n"
-        "- Avoid generic praise, markdown, JSON, code fences, or repeating the title verbatim.\n"
-        "Example output:\n"
-        "1. 该工作提出了一个研究某类量子多体问题的理论或数值框架。\n"
-        "2. 其卖点在于揭示了决定关键物理行为的机制或技术优势。\n"
-        "3. 这为相关模型、平台或后续实验与理论研究提供了明确启发。\n\n"
-        f"Title: {title}\n"
-        f"Abstract: {abstract}"
-    )
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": DEEPSEEK_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        "max_tokens": max_tokens,
-        "stream": False,
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
+    attempt_plans = [
+        {"compact_prompt": False, "max_tokens": max_tokens},
+        {"compact_prompt": True, "max_tokens": max(max_tokens, 3072)},
+    ]
 
-    for attempt in range(3):
-        try:
-            response = post_json(DEEPSEEK_ENDPOINT, payload, headers=headers, timeout=timeout_seconds)
-            usage = response.get("usage") if isinstance(response, dict) else {}
-            for key in usage_totals:
-                usage_totals[key] += int((usage or {}).get(key, 0) or 0)
-
-            choices = response.get("choices") or []
-            if not choices:
-                cache[cache_key] = None
-                return None, usage_totals, "empty_choices"
-
-            choice = choices[0]
-            if choice.get("finish_reason") == "length":
-                cache[cache_key] = None
-                return None, usage_totals, "length"
-
-            message = choice.get("message") or {}
-            content = (message.get("content") or "").strip()
-            if not content:
-                cache[cache_key] = None
-                return None, usage_totals, "empty_content"
-
-            parsed = parse_deepseek_summary(content)
-            cache[cache_key] = parsed
-            if parsed:
-                return parsed, usage_totals, "ok"
-            return None, usage_totals, "parse_failure"
-        except urllib.error.HTTPError as exc:
-            if exc.code in {429, 500, 502, 503, 504} and attempt < 2:
-                time.sleep(2 ** attempt)
-                continue
+    last_status = "request_failure"
+    for plan in attempt_plans:
+        summary, usage, status = summarize_with_deepseek_once(
+            title=title,
+            abstract=abstract,
+            api_key=api_key,
+            model=model,
+            max_tokens=int(plan["max_tokens"]),
+            timeout_seconds=timeout_seconds,
+            compact_prompt=bool(plan["compact_prompt"]),
+        )
+        merge_usage_totals(usage_totals, usage)
+        if summary:
+            cache[cache_key] = summary
+            return summary, usage_totals, "ok"
+        last_status = status
+        if status == "no_key":
             cache[cache_key] = None
-            return None, usage_totals, f"http_{exc.code}"
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
-            if attempt < 2:
-                time.sleep(2 ** attempt)
-                continue
-            cache[cache_key] = None
-            return None, usage_totals, "request_failure"
+            return None, usage_totals, status
 
     cache[cache_key] = None
-    return None, usage_totals, "request_failure"
+    return None, usage_totals, last_status
+
 
 def parse_new_submissions(category: str, html_text: str) -> list[dict[str, str]]:
     soup = BeautifulSoup(html_text, "html.parser")
@@ -483,8 +532,86 @@ def translate_full_abstract(text: str, cache: dict[str, str | None], enabled: bo
     return "\n\n".join(translated_chunks)
 
 
-def fallback_translated_abstract() -> str:
-    return "中文摘要自动翻译失败，请展开查看英文原文。"
+def split_summary_sentences(text: str) -> list[str]:
+    normalized = text.replace("\r", "\n")
+    normalized = re.sub(r"\n{2,}", "\n", normalized)
+    parts = re.split(r"(?<=[\u3002\uff01\uff1f\uff1b.!?;])\s+|\n+", normalized)
+    sentences: list[str] = []
+    for part in parts:
+        cleaned = clean_space(part).strip("-\u2022 ")
+        if len(cleaned) >= 8:
+            sentences.append(cleaned)
+    if sentences:
+        return sentences
+    fallback = clean_space(normalized)
+    return [fallback] if fallback else []
+
+
+def pick_fallback_sentence(
+    sentences: list[str],
+    used: set[str],
+    keywords: list[str] | None = None,
+    reverse: bool = False,
+) -> str | None:
+    ordered = list(reversed(sentences)) if reverse else list(sentences)
+    if keywords:
+        for sentence in ordered:
+            if sentence in used:
+                continue
+            normalized_sentence = normalize(sentence)
+            if any(keyword in sentence or keyword in normalized_sentence for keyword in keywords):
+                return sentence
+    for sentence in ordered:
+        if sentence not in used and len(clean_space(sentence)) >= 10:
+            return sentence
+    for sentence in ordered:
+        if sentence not in used:
+            return sentence
+    return None
+
+
+def build_three_part_fallback_summary(translated_abstract: str) -> str | None:
+    sentences = split_summary_sentences(translated_abstract)
+    if not sentences:
+        return None
+
+    used: set[str] = set()
+    what_done = pick_fallback_sentence(sentences, used)
+    if not what_done:
+        return None
+    used.add(what_done)
+
+    selling_keywords = [
+        "\u63d0\u51fa", "\u6784\u9020", "\u5efa\u7acb", "\u5b9e\u73b0", "\u63ed\u793a", "\u53d1\u73b0", "\u8bc1\u660e", "\u7edf\u4e00", "\u6539\u8fdb", "\u52a0\u901f", "\u7a33\u5b9a",
+        "\u7cbe\u786e", "\u9ad8\u6548", "\u9c81\u68d2", "\u673a\u5236", "\u76f8\u53d8", "\u62d3\u6251", "\u7ea0\u7f20", "\u8bef\u5dee", "\u4fdd\u771f", "\u4f18\u52bf",
+        "scalable", "robust", "efficient", "mechanism", "accuracy", "advantage",
+    ]
+    selling_point = pick_fallback_sentence(sentences, used, keywords=selling_keywords)
+    if not selling_point:
+        selling_point = "\u5176\u5356\u70b9\u5728\u4e8e\u63d0\u70bc\u51fa\u8be5\u95ee\u9898\u4e2d\u7684\u5173\u952e\u673a\u5236\u3001\u65b9\u6cd5\u4f18\u52bf\u6216\u53ef\u8ba1\u7b97\u7ed3\u6784\u3002"
+    used.add(selling_point)
+
+    outlook_keywords = [
+        "\u4e3a", "\u6709\u52a9\u4e8e", "\u53ef\u4e3a", "\u53ef\u7528\u4e8e", "\u542f\u53d1", "\u5e94\u7528", "\u5b9e\u9a8c", "\u5e73\u53f0", "\u8fdb\u4e00\u6b65", "\u672a\u6765",
+        "\u540e\u7eed", "\u63a8\u5e7f", "\u62d3\u5c55", "\u8bbe\u8ba1", "\u8def\u7ebf", "benchmark", "future", "application", "experiment",
+    ]
+    outlook = pick_fallback_sentence(sentences, used, keywords=outlook_keywords, reverse=True)
+    if not outlook:
+        outlook = "\u8fd9\u4e3a\u76f8\u5173\u6a21\u578b\u3001\u7b97\u6cd5\u3001\u5b9e\u9a8c\u5e73\u53f0\u6216\u540e\u7eed\u7406\u8bba\u7814\u7a76\u63d0\u4f9b\u4e86\u53ef\u7ee7\u7eed\u63a8\u8fdb\u7684\u65b9\u5411\u3002"
+
+    return "\n".join([
+        f"1. {normalize_summary_sentence(what_done)}",
+        f"2. {normalize_summary_sentence(selling_point)}",
+        f"3. {normalize_summary_sentence(outlook)}",
+    ])
+
+
+def fallback_translated_abstract(title: str) -> str:
+    return "\n".join([
+        f"1. \u8be5\u5de5\u4f5c\u56f4\u7ed5\u300a{title}\u300b\u5bf9\u5e94\u7684\u95ee\u9898\u7ed9\u51fa\u4e86\u65b0\u7684\u5206\u6790\u3001\u5efa\u6a21\u6216\u8ba1\u7b97\u7ed3\u679c\u3002",
+        "2. \u5176\u5356\u70b9\u5728\u4e8e\u628a\u6838\u5fc3\u7269\u7406\u56fe\u50cf\u3001\u6280\u672f\u8def\u7ebf\u6216\u6570\u503c\u8bc1\u636e\u538b\u7f29\u4e3a\u53ef\u76f4\u63a5\u6bd4\u8f83\u7684\u7ed3\u8bba\u3002",
+        "3. \u8fd9\u4e3a\u76f8\u5173\u4f53\u7cfb\u7684\u540e\u7eed\u7406\u8bba\u63a8\u6f14\u3001\u7b97\u6cd5\u9a8c\u8bc1\u6216\u5b9e\u9a8c\u8bbe\u8ba1\u63d0\u4f9b\u4e86\u53ef\u53c2\u8003\u7684\u51fa\u53d1\u70b9\u3002",
+    ])
 
 
 def enrich_papers(
@@ -503,6 +630,7 @@ def enrich_papers(
         "calls": 0,
         "successes": 0,
         "fallbacks": 0,
+        "local_fallbacks": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
@@ -532,8 +660,7 @@ def enrich_papers(
                 max_tokens=deepseek_max_tokens,
                 timeout_seconds=deepseek_timeout_seconds,
             )
-            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
-                deepseek_usage[key] += usage.get(key, 0)
+            merge_usage_totals(deepseek_usage, usage)
             if summary:
                 deepseek_usage["successes"] += 1
                 summary_source = "deepseek"
@@ -547,14 +674,22 @@ def enrich_papers(
                 deepseek_usage["request_failures"] += 1
 
         if not summary:
-            summary = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
-            if summary:
+            translated_abstract = translate_full_abstract(paper["abstract"], translation_cache, enable_translation)
+            if enable_deepseek_summary:
+                if translated_abstract:
+                    summary = build_three_part_fallback_summary(translated_abstract) or fallback_translated_abstract(paper["title"])
+                    summary_source = "local-fallback"
+                    deepseek_usage["local_fallbacks"] += 1
+                else:
+                    summary = fallback_translated_abstract(paper["title"])
+                    summary_source = "translation-fallback"
+                deepseek_usage["fallbacks"] += 1
+            elif translated_abstract:
+                summary = translated_abstract
                 summary_source = "translation"
             else:
-                summary = fallback_translated_abstract()
+                summary = fallback_translated_abstract(paper["title"])
                 summary_source = "translation-fallback"
-            if enable_deepseek_summary:
-                deepseek_usage["fallbacks"] += 1
 
         authors = author_cache.get(paper["id"])
         if authors is None:
@@ -574,6 +709,8 @@ def enrich_papers(
             }
         )
     return result, deepseek_usage
+
+
 def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     papers_json = json.dumps(papers, ensure_ascii=False)
     template = """<!doctype html>
@@ -675,7 +812,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
       <h1>Daily ArXiv Selection</h1>
       <p>
         数据来自 arXiv 当天的 <code>cond-mat</code>、<code>hep-th</code>、<code>math-ph</code>、<code>quant-ph</code> 四个分类页，口径限定为 <code>New submissions</code>。
-        页面主体优先展示 DeepSeek reasoner 生成的三句话中文总结；若 API 不可用或返回异常，则回退为英文摘要的完整中文翻译；下拉可以查看英文原版摘要。
+        页面主体优先展示 DeepSeek reasoner 生成的三句话中文总结；若 API 不可用或返回异常，则回退为基于中文翻译抽取的本地三句话总结；下拉可以查看英文原版摘要。
       </p>
       <div class="stats" id="stats"></div>
     </section>
@@ -761,7 +898,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
           ${renderAuthors(paper)}
           <p class="summary">${escapeHtml(paper.summary)}</p>
           <details><summary>查看英文原文摘要</summary><p>${escapeHtml(paper.abstract)}</p></details>
-          <footer><span>${paper.summary_source === "deepseek" ? "DeepSeek three-sentence PRL summary" : (paper.summary_source === "translation" ? "Chinese abstract translation" : "Chinese translation fallback")}</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer>
+          <footer><span>${paper.summary_source === "deepseek" ? "DeepSeek three-sentence PRL summary" : (paper.summary_source === "local-fallback" ? "Local three-sentence fallback" : (paper.summary_source === "translation" ? "Chinese abstract translation" : "Chinese placeholder fallback"))}</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer>
         </article>`;
       }).join("");
     }
@@ -899,7 +1036,7 @@ def generate(date_str: str | None = None) -> Path:
         log(
             f"[usage] DeepSeek prompt_tokens={deepseek_usage['prompt_tokens']} "
             f"completion_tokens={deepseek_usage['completion_tokens']} total_tokens={deepseek_usage['total_tokens']} "
-            f"successes={deepseek_usage['successes']} fallbacks={deepseek_usage['fallbacks']} "
+            f"successes={deepseek_usage['successes']} fallbacks={deepseek_usage['fallbacks']} local_fallbacks={deepseek_usage['local_fallbacks']} "
             f"length={deepseek_usage['length_truncations']} empty={deepseek_usage['empty_content']} "
             f"parse_failures={deepseek_usage['parse_failures']} request_failures={deepseek_usage['request_failures']}"
         )
