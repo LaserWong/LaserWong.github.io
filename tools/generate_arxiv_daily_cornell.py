@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "arxiv_daily_cornell_config.json"
-USER_AGENT = "Mozilla/5.0 (compatible; ArxivDailyCornell/1.0)"
+USER_AGENT = "Mozilla/5.0 (compatible; ArxivDailyKimGroup/1.0)"
 OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses"
 DEFAULT_OPENAI_MODEL = "gpt-5-codex"
 DEFAULT_OPENAI_MAX_OUTPUT_TOKENS = 220
@@ -85,7 +85,7 @@ def select_featured_authors(authors: list[str], max_total: int) -> list[str]:
 
 
 OPENAI_SYSTEM_PROMPT = (
-    "You are an expert editor preparing a Cornell-style daily arXiv digest for advanced physics readers. "
+    "You are an expert editor preparing a Kim Group daily arXiv digest for advanced physics readers. "
     "Use only the provided title, subjects, comments, and abstract. "
     "Write compact, factual English without hype."
 )
@@ -576,7 +576,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cornell arXiv Daily - __DATE__</title>
+  <title>Kim Group arXiv Daily - __DATE__</title>
   <style>
     :root { --bg:#f4efe7; --panel:#fffdf9; --text:#281f18; --muted:#67584d; --line:rgba(61,46,32,.14); --accent:#8d402e; --accent2:#1d5b66; --ai:#9a4d12; --qc:#6e4db5; --qi:#236d5c; --cmt:#7a3c2f; --exp:#2e6f3f; --radius:20px; }
     * { box-sizing:border-box; }
@@ -647,7 +647,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
 <body>
   <div class="shell">
     <section class="hero">
-      <div class="eyebrow">Cornell arXiv Daily ? __DATE__</div>
+      <div class="eyebrow">Kim Group arXiv Daily &middot; __DATE__</div>
       <h1>AI, Quantum, and CMT arXiv Digest</h1>
       <p>This local digest scans <code>cond-mat</code>, <code>quant-ph</code>, and <code>cs</code> new submissions. The ranking prioritizes AI for physics, then quantum computation and simulation, then quantum information, and finally condensed-matter theory and computation. Each card keeps the core metadata visible and hides the full abstract inside a compact disclosure panel.</p>
       <div class="stats">__STATS_HTML__</div>
@@ -721,7 +721,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
 
 def build_archive_html(entries: list[dict[str, Any]]) -> str:
     cards = "\n".join(f'<article class="card"><h2><a href="./{entry["date"]}/index.html">{entry["date"]}</a></h2><p>{entry["count"]} papers · categories: {", ".join(entry["categories"])}.</p></article>' for entry in entries) or "<p>No digests have been generated yet.</p>"
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cornell arXiv Daily Archive</title><style>body{{margin:0;font-family:"Aptos","Segoe UI",Arial,sans-serif;background:#f4efe7;color:#281f18}}.shell{{width:min(960px,calc(100% - 32px));margin:0 auto;padding:32px 0 56px}}.hero{{padding:28px;border-radius:28px;background:rgba(255,255,255,.88);border:1px solid rgba(61,46,32,.14)}}h1{{margin:0 0 8px;font-size:40px}}p{{color:#67584d;line-height:1.7}}.grid{{display:grid;gap:16px;margin-top:24px}}.card{{padding:18px 20px;border-radius:22px;background:rgba(255,255,255,.9);border:1px solid rgba(61,46,32,.14)}}.card h2{{margin:0 0 10px;font-size:22px}}.card a{{color:#8d402e;text-decoration:none}}.actions{{margin-top:18px;display:flex;gap:14px;flex-wrap:wrap}}.button{{display:inline-block;padding:10px 14px;border-radius:999px;background:#8d402e;color:white;text-decoration:none}}</style></head><body><div class="shell"><section class="hero"><h1>Cornell arXiv Daily Archive</h1><p>Companion archive for the Cornell-style selection. This track prioritizes AI for physics, quantum computation, quantum information, and condensed-matter theory / computation.</p><div class="actions"><a class="button" href="./latest.html">Open latest digest</a></div></section><section class="grid">{cards}</section></div></body></html>"""
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kim Group arXiv Daily Archive</title><style>body{{margin:0;font-family:"Aptos","Segoe UI",Arial,sans-serif;background:#f4efe7;color:#281f18}}.shell{{width:min(960px,calc(100% - 32px));margin:0 auto;padding:32px 0 56px}}.hero{{padding:28px;border-radius:28px;background:rgba(255,255,255,.88);border:1px solid rgba(61,46,32,.14)}}h1{{margin:0 0 8px;font-size:40px}}p{{color:#67584d;line-height:1.7}}.grid{{display:grid;gap:16px;margin-top:24px}}.card{{padding:18px 20px;border-radius:22px;background:rgba(255,255,255,.9);border:1px solid rgba(61,46,32,.14)}}.card h2{{margin:0 0 10px;font-size:22px}}.card a{{color:#8d402e;text-decoration:none}}.actions{{margin-top:18px;display:flex;gap:14px;flex-wrap:wrap}}.button{{display:inline-block;padding:10px 14px;border-radius:999px;background:#8d402e;color:white;text-decoration:none}}</style></head><body><div class="shell"><section class="hero"><h1>Kim Group arXiv Daily Archive</h1><p>Companion archive for the Kim Group selection. This track prioritizes AI for physics, quantum computation, quantum information, and condensed-matter theory / computation.</p><div class="actions"><a class="button" href="./latest.html">Open latest digest</a></div></section><section class="grid">{cards}</section></div></body></html>"""
 
 
 def write_archive(output_root: Path) -> None:
@@ -736,7 +736,7 @@ def write_archive(output_root: Path) -> None:
     (output_root / "index.html").write_text(build_archive_html(entries), encoding="utf-8-sig")
     if entries:
         latest_target = f"./{entries[0]['date']}/index.html"
-        latest_html = f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url={latest_target}\"><title>Latest Cornell arXiv Daily</title></head><body><script>window.location.replace('{latest_target}');</script><p><a href=\"{latest_target}\">Open latest digest</a></p></body></html>"
+        latest_html = f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url={latest_target}\"><title>Latest Kim Group arXiv Daily</title></head><body><script>window.location.replace('{latest_target}');</script><p><a href=\"{latest_target}\">Open latest digest</a></p></body></html>"
         (output_root / "latest.html").write_text(latest_html, encoding="utf-8-sig")
 
 
@@ -807,7 +807,7 @@ def generate(date_str: str | None = None) -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate the Cornell arXiv daily digest.")
+    parser = argparse.ArgumentParser(description="Generate the Kim Group arXiv daily digest.")
     parser.add_argument("--date", help="Target date in YYYY-MM-DD. Defaults to today.")
     return parser.parse_args()
 

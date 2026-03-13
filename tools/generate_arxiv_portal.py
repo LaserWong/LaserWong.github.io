@@ -17,7 +17,7 @@ ARCHIVES = [
     },
     {
         "slug": "arxiv_daily_cornell",
-        "title": "arXiv Daily Archive_cornell",
+        "title": "arXiv Daily Archive (Kim Group)",
         "description": "English digest prioritizing AI for physics, quantum computation / simulation, quantum information, and CMT theory / computation across cond-mat, quant-ph, and cs.",
     },
 ]
@@ -107,7 +107,7 @@ def build_home_html() -> str:
   <div class="shell">
     <section class="hero">
       <h1>ArXiv Daily Portal</h1>
-      <p>This landing page hosts two parallel daily arXiv digests. Use <strong>arXiv Daily Archive</strong> for the original Chinese theory / numerical digest, and <strong>arXiv Daily Archive_cornell</strong> for the Cornell-style English AI, quantum, and CMT selection.</p>
+      <p>This landing page hosts two parallel daily arXiv digests. Use <strong>arXiv Daily Archive</strong> for the original Chinese theory / numerical digest, and <strong>arXiv Daily Archive (Kim Group)</strong> for the Kim Group English AI, quantum, and CMT selection.</p>
     </section>
     <section class="grid">{card_html}</section>
   </div>
@@ -126,7 +126,7 @@ def run_generators(date_str: str | None = None) -> None:
     cornell = load_module("generate_arxiv_daily_cornell", TOOLS / "generate_arxiv_daily_cornell.py")
     log("[portal 1/3] Running original arXiv daily generator")
     original.generate(date_str=date_str)
-    log("[portal 2/3] Running Cornell arXiv daily generator")
+    log("[portal 2/3] Running Kim Group arXiv daily generator")
     cornell.generate(date_str=date_str)
     log("[portal 3/3] Writing shared home page")
     write_home_page()

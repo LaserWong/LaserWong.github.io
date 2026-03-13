@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cornell arXiv Daily - 2026-03-12</title>
+  <title>Kim Group arXiv Daily - 2026-03-12</title>
   <style>
     :root { --bg:#f4efe7; --panel:#fffdf9; --text:#281f18; --muted:#67584d; --line:rgba(61,46,32,.14); --accent:#8d402e; --accent2:#1d5b66; --ai:#9a4d12; --qc:#6e4db5; --qi:#236d5c; --cmt:#7a3c2f; --exp:#2e6f3f; --radius:20px; }
     * { box-sizing:border-box; }
@@ -18,15 +18,26 @@
     .stat { padding:16px; border-radius:18px; background:rgba(255,255,255,.8); border:1px solid var(--line); }
     .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
     .value { font-size:26px; font-weight:700; }
-    .controls { position:sticky; top:12px; z-index:2; margin-top:22px; padding:18px; border-radius:22px; }
-    .control-grid { display:grid; grid-template-columns:1.3fr 1fr 1fr 1fr; gap:16px; }
+    .controls { position:sticky; top:12px; z-index:2; margin-top:22px; padding:16px; border-radius:22px; transition:padding .18s ease, transform .18s ease, top .18s ease, box-shadow .18s ease; }
+    .controls.compact { top:6px; padding:10px 12px; transform:translateY(-6px); box-shadow:0 8px 18px rgba(54,32,16,.08); }
+    .control-grid { display:grid; grid-template-columns:minmax(280px,1.2fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr); gap:12px 14px; align-items:start; transition:gap .18s ease; }
+    .controls.compact .control-grid { gap:8px 10px; }
     .field { display:flex; flex-direction:column; gap:10px; }
     .field label { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-    .search { width:100%; padding:14px 16px; border-radius:16px; border:1px solid var(--line); background:#fff; font:inherit; color:var(--text); }
-    .chip-row { display:flex; flex-wrap:wrap; gap:10px; }
-    .chip { border:1px solid var(--line); background:#fff; padding:10px 14px; border-radius:999px; font:inherit; cursor:pointer; }
+    .controls.compact .field label { font-size:11px; }
+    .search-field { grid-column:1; grid-row:1; }
+    .category-field { grid-column:1; grid-row:2; }
+    .bucket-field { grid-column:2 / 4; grid-row:1; }
+    .type-field { grid-column:4; grid-row:1; }
+    .highlight-field { grid-column:2 / 5; grid-row:2; transition:opacity .18s ease, max-height .18s ease; }
+    .controls.compact .highlight-field { opacity:0; max-height:0; overflow:hidden; }
+    .search { width:100%; padding:12px 14px; border-radius:14px; border:1px solid var(--line); background:#fff; font:inherit; color:var(--text); transition:padding .18s ease; }
+    .controls.compact .search { padding:8px 10px; }
+    .chip-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .chip { border:1px solid var(--line); background:#fff; padding:8px 11px; border-radius:999px; font:inherit; cursor:pointer; transition:padding .18s ease; }
+    .controls.compact .chip { padding:6px 9px; }
     .chip.active { border-color:rgba(141,64,46,.34); background:rgba(141,64,46,.12); color:#5b2418; }
-    .meta-row { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:14px; color:var(--muted); font-size:14px; }
+    .meta-row { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:10px; color:var(--muted); font-size:14px; }
     .paper-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; margin-top:22px; }
     .paper { display:flex; flex-direction:column; gap:14px; padding:22px; border-radius:var(--radius); }
     .paper-top { display:flex; flex-wrap:wrap; gap:8px; }
@@ -45,31 +56,38 @@
     .paper h2 a:hover { color:var(--accent); }
     .authors, .subjects, .comments { color:var(--muted); font-size:14px; line-height:1.6; }
     .authors strong, .subjects strong, .comments strong { color:var(--text); }
-    .abstract { margin:0; font-size:15px; line-height:1.76; }
-    footer { margin-top:auto; display:flex; justify-content:space-between; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
+    details { border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:rgba(255,255,255,.72); }
+    details summary { cursor:pointer; color:var(--accent2); font-weight:700; list-style:none; }
+    details summary::-webkit-details-marker { display:none; }
+    details p { margin:10px 0 0; color:var(--muted); line-height:1.72; font-size:14px; }
+    footer { margin-top:auto; display:flex; justify-content:flex-end; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
     footer a { color:var(--accent); font-weight:700; text-decoration:none; }
     .empty { display:none; margin-top:24px; padding:28px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:22px; background:rgba(255,255,255,.7); }
-    @media (max-width:1040px) { .control-grid { grid-template-columns:1fr 1fr; } .controls { position:static; } }
+    @media (max-width:1040px) {
+      .control-grid { grid-template-columns:1fr 1fr; }
+      .search-field, .category-field, .bucket-field, .type-field, .highlight-field { grid-column:auto; grid-row:auto; }
+      .controls { position:static; }
+    }
     @media (max-width:720px) { .control-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <div class="shell">
     <section class="hero">
-      <div class="eyebrow">Cornell arXiv Daily · 2026-03-12</div>
+      <div class="eyebrow">Kim Group arXiv Daily &middot; 2026-03-12</div>
       <h1>AI, Quantum, and CMT arXiv Digest</h1>
-      <p>This local digest scans <code>cond-mat</code>, <code>quant-ph</code>, and <code>cs</code> new submissions. The ranking prioritizes AI for physics, then quantum computation and simulation, then quantum information, and finally condensed-matter theory and computation. Highlighted tracks include AI for physics, quantum advantage, and quantum error correction.</p>
+      <p>This local digest scans <code>cond-mat</code>, <code>quant-ph</code>, and <code>cs</code> new submissions. The ranking prioritizes AI for physics, then quantum computation and simulation, then quantum information, and finally condensed-matter theory and computation. Each card keeps the core metadata visible and hides the full abstract inside a compact disclosure panel.</p>
       <div class="stats"><article class="stat"><div class="label">Selected papers</div><div class="value">103</div></article><article class="stat"><div class="label">AI for Physics</div><div class="value">2</div></article><article class="stat"><div class="label">Quantum Computation / Simulation</div><div class="value">25</div></article><article class="stat"><div class="label">Quantum Information</div><div class="value">17</div></article><article class="stat"><div class="label">CMT Theory / Computation</div><div class="value">59</div></article><article class="stat"><div class="label">Highlighted</div><div class="value">6</div></article></div>
     </section>
-    <section class="controls">
+    <section class="controls" id="controls">
       <div class="control-grid">
-        <div class="field"><label for="search">Search</label><input class="search" id="search" type="search" placeholder="Search title, authors, subjects, abstract, or arXiv id"></div>
-        <div class="field"><label>Category</label><div class="chip-row" id="category-filters"></div></div>
-        <div class="field"><label>Bucket</label><div class="chip-row" id="bucket-filters"></div></div>
-        <div class="field"><label>Type</label><div class="chip-row" id="type-filters"></div></div>
+        <div class="field search-field"><label for="search">Search</label><input class="search" id="search" type="search" placeholder="Search title, authors, abstract, subjects, comments, or arXiv id"></div>
+        <div class="field category-field"><label>Category</label><div class="chip-row" id="category-filters"></div></div>
+        <div class="field bucket-field"><label>Bucket</label><div class="chip-row" id="bucket-filters"></div></div>
+        <div class="field type-field"><label>Type</label><div class="chip-row" id="type-filters"></div></div>
+        <div class="field highlight-field"><label>Highlights</label><div class="chip-row" id="highlight-filters"></div></div>
       </div>
-      <div class="field" style="margin-top:16px;"><label>Highlights</label><div class="chip-row" id="highlight-filters"></div></div>
-      <div class="meta-row"><div id="result-count">Loading…</div><div><a href="../index.html">Archive</a></div></div>
+      <div class="meta-row"><div id="result-count">Loading...</div><div><a href="../index.html">Archive</a></div></div>
     </section>
     <section class="paper-grid" id="paper-grid"></section>
     <section class="empty" id="empty-state">No papers match the current search and filters.</section>
@@ -85,6 +103,7 @@
     const resultCountEl = document.getElementById("result-count");
     const emptyStateEl = document.getElementById("empty-state");
     const searchEl = document.getElementById("search");
+    const controlsEl = document.getElementById("controls");
     function escapeHtml(value) { return String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
     function bucketClass(bucket) { if (bucket === "AI for Physics") return "bucket-ai"; if (bucket === "Quantum Computation / Simulation") return "bucket-qc"; if (bucket === "Quantum Information") return "bucket-qi"; return "bucket-cmt"; }
     function typeClass(type) { return type === "Experiment" ? "type-exp" : "type"; }
@@ -105,7 +124,7 @@
         const highlights = (paper.highlights || []).map((tag) => `<span class="tag highlight">${escapeHtml(tag)}</span>`).join("");
         const subjects = paper.subjects ? `<div class="subjects"><strong>Subjects:</strong> ${escapeHtml(paper.subjects)}</div>` : "";
         const comments = paper.comments ? `<div class="comments"><strong>Comments:</strong> ${escapeHtml(paper.comments)}</div>` : "";
-        return `<article class="paper"><div class="paper-top"><span class="tag category">${escapeHtml(paper.category)}</span><span class="tag ${bucketClass(paper.bucket)}">${escapeHtml(paper.bucket)}</span><span class="tag ${typeClass(paper.type)}">${escapeHtml(paper.type)}</span>${highlights}</div><div class="id">arXiv:${escapeHtml(paper.id)}</div><h2><a href="${safeUrl}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h2><div class="authors"><strong>Authors:</strong> ${escapeHtml((paper.featured_authors || []).join(", ") || "Not available")}</div><div class="comments">${escapeHtml(paper.author_note || "")}</div>${subjects}${comments}<p class="abstract">${escapeHtml(paper.abstract)}</p><footer><span>${escapeHtml(paper.primary_subject || paper.bucket)}</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer></article>`;
+        return `<article class="paper"><div class="paper-top"><span class="tag category">${escapeHtml(paper.category)}</span><span class="tag ${bucketClass(paper.bucket)}">${escapeHtml(paper.bucket)}</span><span class="tag ${typeClass(paper.type)}">${escapeHtml(paper.type)}</span>${highlights}</div><div class="id">arXiv:${escapeHtml(paper.id)}</div><h2><a href="${safeUrl}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h2><div class="authors"><strong>Authors:</strong> ${escapeHtml((paper.featured_authors || []).join(", ") || "Not available")}</div><div class="comments">${escapeHtml(paper.author_note || "")}</div>${subjects}${comments}<details><summary>Abstract</summary><p>${escapeHtml(paper.abstract)}</p></details><footer><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer></article>`;
       }).join("");
     }
     function rerenderFilters() {
@@ -114,9 +133,12 @@
       renderChips("type-filters", typeOrder, state.types, (value) => { toggleRequiredSet(state.types, value); rerenderFilters(); renderPapers(); });
       renderChips("highlight-filters", highlightOrder, state.highlights, (value) => { toggleOptionalSet(state.highlights, value); rerenderFilters(); renderPapers(); });
     }
+    function updateControlsCompact() { controlsEl.classList.toggle("compact", window.scrollY > 160); }
     searchEl.addEventListener("input", (event) => { state.search = event.target.value.trim().toLowerCase(); renderPapers(); });
+    window.addEventListener("scroll", updateControlsCompact, { passive: true });
     rerenderFilters();
     renderPapers();
+    updateControlsCompact();
   </script>
 </body>
 </html>
