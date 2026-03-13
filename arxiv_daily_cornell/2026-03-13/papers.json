@@ -38,6 +38,62 @@
     ]
   },
   {
+    "id": "2603.11195",
+    "category": "quant-ph",
+    "title": "Generative modeling with Gaussian Boson Sampling: classically trainable Bosonic Born Machines",
+    "authors": [
+      "Zoltán Kolarovszki",
+      "Bence Bakó",
+      "Michał Oszmaniec",
+      "Changhun Oh",
+      "Zoltán Zimborás"
+    ],
+    "featured_authors": [
+      "Zoltán Kolarovszki",
+      "Bence Bakó",
+      "Michał Oszmaniec",
+      "Changhun Oh",
+      "Zoltán Zimborás"
+    ],
+    "author_count": 5,
+    "author_note": "5 authors",
+    "abstract": "Quantum generative modeling has emerged as a promising application of quantum computers, aiming to model complex probability distributions beyond the reach of classical methods. In practice, however, training such models often requires costly gradient estimation performed directly on the quantum hardware. Crucially, for certain structured quantum circuits, expectation values of local observables can be efficiently evaluated on a classical computer, enabling classical training without calls to the quantum hardware in the optimization loop. In these models, sampling from the resulting circuits can still be classically hard, so inference must be performed on a quantum device, yielding a potential computational advantage. In this work, we introduce a photonic quantum generative model built on parametrized Gaussian Boson Sampling circuits. The training is based on the efficient classical evaluation of expectation values enabled by the Gaussian structure of the state, allowing scalable optimization of the model parameters through the maximum mean discrepancy loss function. We demonstrate the effectiveness of the approach through numerical experiments on photonic systems with up to 805 modes and over a million trainable parameters, highlighting its scalability and suitability for near-term photonic quantum devices.",
+    "subjects": "Quantum Physics (quant-ph)",
+    "primary_subject": "Quantum Physics (quant-ph)",
+    "comments": "35 pages, 6 figures",
+    "url": "https://arxiv.org/abs/2603.11195",
+    "type": "Theory + Numerical",
+    "bucket": "AI for Physics",
+    "highlights": [
+      "AI for Physics"
+    ]
+  },
+  {
+    "id": "2603.11189",
+    "category": "quant-ph",
+    "title": "DysonNet: Constant-Time Local Updates for Neural Quantum States",
+    "authors": [
+      "Lucas Winter",
+      "Andreas Nunnenkamp"
+    ],
+    "featured_authors": [
+      "Lucas Winter",
+      "Andreas Nunnenkamp"
+    ],
+    "author_count": 2,
+    "author_note": "2 authors",
+    "abstract": "Neural quantum states (NQS) provide a flexible variational framework for many-body wavefunctions, but suffer from high computational cost and limited interpretability. We introduce DysonNet, a broad class of NQS that couples strictly local nonlinearities through global linear layers. This structure is analogous to a truncated Dyson series which gives an intuitive interpretation of local wavefunction updates as scattering from static impurities. By resumming the scattering series, single-spin-flip updates can be computed in $\\mathcal{O}(1)$ time, independent of system size, using an algorithm we call ABACUS. Implementing DysonNet with the state-space model S4, we obtain up to $230\\times$ speedups over Vision-Transformers for computing the local estimator. This corresponds to an asymptotic $\\mathcal{O}(N^2)$ improvement in training-time scaling, reaching $\\mathcal{O}(N \\log^2 N)$ total training complexity in area-law phases. Benchmarks on the 1D long-range Ising model and frustrated $J_1$-$J_2$ chains show that DysonNet matches state-of-the-art NQS accuracy while removing the dominant local-update overhead. More broadly, our results suggest a route to scalable NQS architectures where physical interpretability directly enables computational efficiency.",
+    "subjects": "Quantum Physics (quant-ph) ; Disordered Systems and Neural Networks (cond-mat.dis-nn)",
+    "primary_subject": "Quantum Physics (quant-ph)",
+    "comments": "26 pages, 7 figures",
+    "url": "https://arxiv.org/abs/2603.11189",
+    "type": "Theory + Numerical",
+    "bucket": "AI for Physics",
+    "highlights": [
+      "AI for Physics"
+    ]
+  },
+  {
     "id": "2603.11414",
     "category": "cs",
     "title": "MaterialFigBENCH: benchmark dataset with figures for evaluating college-level materials science problem-solving abilities of multimodal large language models",
@@ -743,35 +799,6 @@
     "highlights": []
   },
   {
-    "id": "2603.11195",
-    "category": "quant-ph",
-    "title": "Generative modeling with Gaussian Boson Sampling: classically trainable Bosonic Born Machines",
-    "authors": [
-      "Zoltán Kolarovszki",
-      "Bence Bakó",
-      "Michał Oszmaniec",
-      "Changhun Oh",
-      "Zoltán Zimborás"
-    ],
-    "featured_authors": [
-      "Zoltán Kolarovszki",
-      "Bence Bakó",
-      "Michał Oszmaniec",
-      "Changhun Oh",
-      "Zoltán Zimborás"
-    ],
-    "author_count": 5,
-    "author_note": "5 authors",
-    "abstract": "Quantum generative modeling has emerged as a promising application of quantum computers, aiming to model complex probability distributions beyond the reach of classical methods. In practice, however, training such models often requires costly gradient estimation performed directly on the quantum hardware. Crucially, for certain structured quantum circuits, expectation values of local observables can be efficiently evaluated on a classical computer, enabling classical training without calls to the quantum hardware in the optimization loop. In these models, sampling from the resulting circuits can still be classically hard, so inference must be performed on a quantum device, yielding a potential computational advantage. In this work, we introduce a photonic quantum generative model built on parametrized Gaussian Boson Sampling circuits. The training is based on the efficient classical evaluation of expectation values enabled by the Gaussian structure of the state, allowing scalable optimization of the model parameters through the maximum mean discrepancy loss function. We demonstrate the effectiveness of the approach through numerical experiments on photonic systems with up to 805 modes and over a million trainable parameters, highlighting its scalability and suitability for near-term photonic quantum devices.",
-    "subjects": "Quantum Physics (quant-ph)",
-    "primary_subject": "Quantum Physics (quant-ph)",
-    "comments": "35 pages, 6 figures",
-    "url": "https://arxiv.org/abs/2603.11195",
-    "type": "Theory + Numerical",
-    "bucket": "Quantum Computation / Simulation",
-    "highlights": []
-  },
-  {
     "id": "2603.11635",
     "category": "cond-mat",
     "title": "All-electrostatic valley qubit gates in tilted Dirac-Weyl semimetals",
@@ -1303,29 +1330,6 @@
     "primary_subject": "Quantum Physics (quant-ph)",
     "comments": "24 pages, 4 figures",
     "url": "https://arxiv.org/abs/2603.11236",
-    "type": "Theory + Numerical",
-    "bucket": "Quantum Information",
-    "highlights": []
-  },
-  {
-    "id": "2603.11189",
-    "category": "quant-ph",
-    "title": "DysonNet: Constant-Time Local Updates for Neural Quantum States",
-    "authors": [
-      "Lucas Winter",
-      "Andreas Nunnenkamp"
-    ],
-    "featured_authors": [
-      "Lucas Winter",
-      "Andreas Nunnenkamp"
-    ],
-    "author_count": 2,
-    "author_note": "2 authors",
-    "abstract": "Neural quantum states (NQS) provide a flexible variational framework for many-body wavefunctions, but suffer from high computational cost and limited interpretability. We introduce DysonNet, a broad class of NQS that couples strictly local nonlinearities through global linear layers. This structure is analogous to a truncated Dyson series which gives an intuitive interpretation of local wavefunction updates as scattering from static impurities. By resumming the scattering series, single-spin-flip updates can be computed in $\\mathcal{O}(1)$ time, independent of system size, using an algorithm we call ABACUS. Implementing DysonNet with the state-space model S4, we obtain up to $230\\times$ speedups over Vision-Transformers for computing the local estimator. This corresponds to an asymptotic $\\mathcal{O}(N^2)$ improvement in training-time scaling, reaching $\\mathcal{O}(N \\log^2 N)$ total training complexity in area-law phases. Benchmarks on the 1D long-range Ising model and frustrated $J_1$-$J_2$ chains show that DysonNet matches state-of-the-art NQS accuracy while removing the dominant local-update overhead. More broadly, our results suggest a route to scalable NQS architectures where physical interpretability directly enables computational efficiency.",
-    "subjects": "Quantum Physics (quant-ph) ; Disordered Systems and Neural Networks (cond-mat.dis-nn)",
-    "primary_subject": "Quantum Physics (quant-ph)",
-    "comments": "26 pages, 7 figures",
-    "url": "https://arxiv.org/abs/2603.11189",
     "type": "Theory + Numerical",
     "bucket": "Quantum Information",
     "highlights": []

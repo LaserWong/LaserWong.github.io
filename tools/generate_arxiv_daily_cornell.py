@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import datetime as dt
@@ -26,7 +26,7 @@ HIGHLIGHT_ORDER = ["AI for Physics", "Quantum Advantage", "Quantum Error Correct
 PHYSICS_CROSSLIST_PREFIXES = ("quant-ph", "cond-mat", "physics.")
 CS_AI_SUBJECT_CODES = {"cs.AI", "cs.LG", "cs.CL", "cs.CV", "cs.NE", "stat.ML"}
 
-AI_KEYWORDS = {"artificial intelligence", "machine learning", "deep learning", "neural network", "graph neural network", "large language model", "foundation model", "reinforcement learning", "diffusion model", "bayesian optimization", "surrogate model", "neural operator", "physics-informed", "inverse design"}
+AI_KEYWORDS = {"artificial intelligence", "machine learning", "deep learning", "neural network", "neural quantum state", "neural quantum states", "quantum neural network", "quantum neural networks", "born machine", "born machines", "graph neural network", "large language model", "foundation model", "reinforcement learning", "diffusion model", "bayesian optimization", "surrogate model", "neural operator", "physics-informed", "inverse design"}
 PHYSICS_TARGET_KEYWORDS = {"condensed matter", "materials science", "quantum physics", "quantum state", "quantum many-body", "many-body", "many body", "hamiltonian", "wavefunction", "phase transition", "band structure", "fermion", "boson", "spin", "superconduct", "cold atom", "ion trap", "trapped ion", "superconducting qubit", "topological matter", "phase-field", "thin film", "complex oxide", "alloy", "electrochemistry", "corrosion", "solidification", "grain boundary"}
 QUANTUM_COMPUTATION_KEYWORDS = {"quantum computation", "quantum computing", "quantum algorithm", "quantum algorithms", "quantum circuit", "quantum circuits", "quantum compiler", "quantum processor", "fault-tolerant", "fault tolerant", "logical qubit", "resource estimate", "qubit", "qubits"}
 QUANTUM_SIMULATION_KEYWORDS = {"quantum simulation", "quantum simulator", "digital quantum simulation", "analog quantum simulation", "analog simulator"}
