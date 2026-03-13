@@ -510,8 +510,6 @@ def enrich_papers(
     for index, paper in enumerate(selected, start=1):
         log(f"      -> paper {index}/{total}: {paper['category']} {paper['id']}")
         featured = select_featured_authors(paper["authors"], max_featured_authors)
-        summary = None
-        summary_source = "local"
         if enable_openai_summary and openai_api_key:
             usage["calls"] += 1
             summary, usage_delta, status = summarize_with_openai(
@@ -526,15 +524,10 @@ def enrich_papers(
             merge_usage_totals(usage, usage_delta)
             if summary:
                 usage["successes"] += 1
-                summary_source = "codex"
             elif status == "parse_failure":
                 usage["parse_failures"] += 1
             elif status not in {"cached", "no_key"}:
                 usage["request_failures"] += 1
-        if not summary:
-            summary = build_local_summary(paper["title"], paper["abstract"])
-            summary_source = "local"
-            if enable_openai_summary:
                 usage["fallbacks"] += 1
         prepared = {
             "id": paper["id"],
@@ -544,8 +537,6 @@ def enrich_papers(
             "featured_authors": featured,
             "author_count": len(paper["authors"]),
             "author_note": author_note(len(paper["authors"]), len(featured)),
-            "summary": summary,
-            "summary_source": summary_source,
             "abstract": paper["abstract"],
             "subjects": paper["subjects"],
             "primary_subject": paper["primary_subject"],
@@ -570,6 +561,8 @@ def stats_cards(papers: list[dict[str, Any]]) -> list[tuple[str, int]]:
     cards.extend((bucket, bucket_counts[bucket]) for bucket in BUCKET_ORDER)
     cards.append(("Highlighted", sum(1 for paper in papers if paper["highlights"])))
     return cards
+
+
 
 
 def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
@@ -598,22 +591,26 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     .stat { padding:16px; border-radius:18px; background:rgba(255,255,255,.8); border:1px solid var(--line); }
     .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
     .value { font-size:26px; font-weight:700; }
-    .controls { position:sticky; top:12px; z-index:2; margin-top:22px; padding:18px; border-radius:22px; transition:padding .18s ease, transform .18s ease, top .18s ease, box-shadow .18s ease; }
-    .controls.compact { top:8px; padding:12px; transform:translateY(-4px); box-shadow:0 8px 18px rgba(54,32,16,.08); }
-    .control-grid { display:grid; grid-template-columns:1.3fr 1fr 1fr 1fr; gap:16px; transition:gap .18s ease; }
-    .controls.compact .control-grid { gap:12px; }
+    .controls { position:sticky; top:12px; z-index:2; margin-top:22px; padding:16px; border-radius:22px; transition:padding .18s ease, transform .18s ease, top .18s ease, box-shadow .18s ease; }
+    .controls.compact { top:6px; padding:10px 12px; transform:translateY(-6px); box-shadow:0 8px 18px rgba(54,32,16,.08); }
+    .control-grid { display:grid; grid-template-columns:minmax(280px,1.2fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr); gap:12px 14px; align-items:start; transition:gap .18s ease; }
+    .controls.compact .control-grid { gap:8px 10px; }
     .field { display:flex; flex-direction:column; gap:10px; }
     .field label { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
     .controls.compact .field label { font-size:11px; }
-    .field.scroll-collapse { transition:opacity .18s ease, max-height .18s ease, margin-top .18s ease; }
-    .controls.compact .field.scroll-collapse { display:none; }
-    .search { width:100%; padding:14px 16px; border-radius:16px; border:1px solid var(--line); background:#fff; font:inherit; color:var(--text); transition:padding .18s ease; }
-    .controls.compact .search { padding:10px 12px; }
-    .chip-row { display:flex; flex-wrap:wrap; gap:10px; }
-    .chip { border:1px solid var(--line); background:#fff; padding:10px 14px; border-radius:999px; font:inherit; cursor:pointer; transition:padding .18s ease; }
-    .controls.compact .chip { padding:8px 11px; }
+    .search-field { grid-column:1; grid-row:1; }
+    .category-field { grid-column:1; grid-row:2; }
+    .bucket-field { grid-column:2 / 4; grid-row:1; }
+    .type-field { grid-column:4; grid-row:1; }
+    .highlight-field { grid-column:2 / 5; grid-row:2; transition:opacity .18s ease, max-height .18s ease; }
+    .controls.compact .highlight-field { opacity:0; max-height:0; overflow:hidden; }
+    .search { width:100%; padding:12px 14px; border-radius:14px; border:1px solid var(--line); background:#fff; font:inherit; color:var(--text); transition:padding .18s ease; }
+    .controls.compact .search { padding:8px 10px; }
+    .chip-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .chip { border:1px solid var(--line); background:#fff; padding:8px 11px; border-radius:999px; font:inherit; cursor:pointer; transition:padding .18s ease; }
+    .controls.compact .chip { padding:6px 9px; }
     .chip.active { border-color:rgba(141,64,46,.34); background:rgba(141,64,46,.12); color:#5b2418; }
-    .meta-row { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:14px; color:var(--muted); font-size:14px; }
+    .meta-row { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:10px; color:var(--muted); font-size:14px; }
     .paper-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; margin-top:22px; }
     .paper { display:flex; flex-direction:column; gap:14px; padding:22px; border-radius:var(--radius); }
     .paper-top { display:flex; flex-wrap:wrap; gap:8px; }
@@ -632,15 +629,18 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     .paper h2 a:hover { color:var(--accent); }
     .authors, .subjects, .comments { color:var(--muted); font-size:14px; line-height:1.6; }
     .authors strong, .subjects strong, .comments strong { color:var(--text); }
-    .summary { margin:0; font-size:15px; line-height:1.76; white-space:pre-line; }
-    details { border-top:1px solid var(--line); padding-top:12px; }
+    details { border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:rgba(255,255,255,.72); }
     details summary { cursor:pointer; color:var(--accent2); font-weight:700; list-style:none; }
     details summary::-webkit-details-marker { display:none; }
     details p { margin:10px 0 0; color:var(--muted); line-height:1.72; font-size:14px; }
-    footer { margin-top:auto; display:flex; justify-content:space-between; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
+    footer { margin-top:auto; display:flex; justify-content:flex-end; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
     footer a { color:var(--accent); font-weight:700; text-decoration:none; }
     .empty { display:none; margin-top:24px; padding:28px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:22px; background:rgba(255,255,255,.7); }
-    @media (max-width:1040px) { .control-grid { grid-template-columns:1fr 1fr; } .controls { position:static; } }
+    @media (max-width:1040px) {
+      .control-grid { grid-template-columns:1fr 1fr; }
+      .search-field, .category-field, .bucket-field, .type-field, .highlight-field { grid-column:auto; grid-row:auto; }
+      .controls { position:static; }
+    }
     @media (max-width:720px) { .control-grid { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -649,17 +649,17 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     <section class="hero">
       <div class="eyebrow">Cornell arXiv Daily ? __DATE__</div>
       <h1>AI, Quantum, and CMT arXiv Digest</h1>
-      <p>This local digest scans <code>cond-mat</code>, <code>quant-ph</code>, and <code>cs</code> new submissions. The ranking prioritizes AI for physics, then quantum computation and simulation, then quantum information, and finally condensed-matter theory and computation. The main card shows a compact three-sentence Codex summary, while the original abstract is hidden in a disclosure panel.</p>
+      <p>This local digest scans <code>cond-mat</code>, <code>quant-ph</code>, and <code>cs</code> new submissions. The ranking prioritizes AI for physics, then quantum computation and simulation, then quantum information, and finally condensed-matter theory and computation. Each card keeps the core metadata visible and hides the full abstract inside a compact disclosure panel.</p>
       <div class="stats">__STATS_HTML__</div>
     </section>
     <section class="controls" id="controls">
       <div class="control-grid">
-        <div class="field"><label for="search">Search</label><input class="search" id="search" type="search" placeholder="Search title, authors, summary, subjects, or arXiv id"></div>
-        <div class="field"><label>Category</label><div class="chip-row" id="category-filters"></div></div>
-        <div class="field"><label>Bucket</label><div class="chip-row" id="bucket-filters"></div></div>
-        <div class="field"><label>Type</label><div class="chip-row" id="type-filters"></div></div>
+        <div class="field search-field"><label for="search">Search</label><input class="search" id="search" type="search" placeholder="Search title, authors, abstract, subjects, comments, or arXiv id"></div>
+        <div class="field category-field"><label>Category</label><div class="chip-row" id="category-filters"></div></div>
+        <div class="field bucket-field"><label>Bucket</label><div class="chip-row" id="bucket-filters"></div></div>
+        <div class="field type-field"><label>Type</label><div class="chip-row" id="type-filters"></div></div>
+        <div class="field highlight-field"><label>Highlights</label><div class="chip-row" id="highlight-filters"></div></div>
       </div>
-      <div class="field scroll-collapse" style="margin-top:16px;"><label>Highlights</label><div class="chip-row" id="highlight-filters"></div></div>
       <div class="meta-row"><div id="result-count">Loading...</div><div><a href="../index.html">Archive</a></div></div>
     </section>
     <section class="paper-grid" id="paper-grid"></section>
@@ -685,7 +685,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
     function toggleOptionalSet(set, value) { if (set.has(value)) set.delete(value); else set.add(value); }
     function matches(paper) {
       const highlightMatch = state.highlights.size === 0 || (paper.highlights || []).some((tag) => state.highlights.has(tag));
-      const haystack = [paper.id, paper.category, paper.bucket, paper.type, paper.title, paper.subjects, paper.comments, paper.summary, paper.abstract, ...(paper.authors || [])].join(" ").toLowerCase();
+      const haystack = [paper.id, paper.category, paper.bucket, paper.type, paper.title, paper.subjects, paper.comments, paper.abstract, ...(paper.authors || [])].join(" ").toLowerCase();
       return state.categories.has(paper.category) && state.buckets.has(paper.bucket) && state.types.has(paper.type) && highlightMatch && haystack.includes(state.search);
     }
     function renderPapers() {
@@ -697,8 +697,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
         const highlights = (paper.highlights || []).map((tag) => `<span class="tag highlight">${escapeHtml(tag)}</span>`).join("");
         const subjects = paper.subjects ? `<div class="subjects"><strong>Subjects:</strong> ${escapeHtml(paper.subjects)}</div>` : "";
         const comments = paper.comments ? `<div class="comments"><strong>Comments:</strong> ${escapeHtml(paper.comments)}</div>` : "";
-        const summarySource = paper.summary_source === "codex" ? "Codex summary" : "Local fallback summary";
-        return `<article class="paper"><div class="paper-top"><span class="tag category">${escapeHtml(paper.category)}</span><span class="tag ${bucketClass(paper.bucket)}">${escapeHtml(paper.bucket)}</span><span class="tag ${typeClass(paper.type)}">${escapeHtml(paper.type)}</span>${highlights}</div><div class="id">arXiv:${escapeHtml(paper.id)}</div><h2><a href="${safeUrl}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h2><div class="authors"><strong>Authors:</strong> ${escapeHtml((paper.featured_authors || []).join(", ") || "Not available")}</div><div class="comments">${escapeHtml(paper.author_note || "")}</div>${subjects}${comments}<p class="summary">${escapeHtml(paper.summary)}</p><details><summary>Original abstract</summary><p>${escapeHtml(paper.abstract)}</p></details><footer><span>${escapeHtml(summarySource)}</span><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer></article>`;
+        return `<article class="paper"><div class="paper-top"><span class="tag category">${escapeHtml(paper.category)}</span><span class="tag ${bucketClass(paper.bucket)}">${escapeHtml(paper.bucket)}</span><span class="tag ${typeClass(paper.type)}">${escapeHtml(paper.type)}</span>${highlights}</div><div class="id">arXiv:${escapeHtml(paper.id)}</div><h2><a href="${safeUrl}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h2><div class="authors"><strong>Authors:</strong> ${escapeHtml((paper.featured_authors || []).join(", ") || "Not available")}</div><div class="comments">${escapeHtml(paper.author_note || "")}</div>${subjects}${comments}<details><summary>Abstract</summary><p>${escapeHtml(paper.abstract)}</p></details><footer><a href="${safeUrl}" target="_blank" rel="noreferrer">Open arXiv</a></footer></article>`;
       }).join("");
     }
     function rerenderFilters() {
@@ -718,6 +717,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
 </html>
 """
     return template.replace("__DATE__", date_str).replace("__PAPERS_JSON__", papers_json).replace("__STATS_HTML__", cards_html)
+
 
 def build_archive_html(entries: list[dict[str, Any]]) -> str:
     cards = "\n".join(f'<article class="card"><h2><a href="./{entry["date"]}/index.html">{entry["date"]}</a></h2><p>{entry["count"]} papers · categories: {", ".join(entry["categories"])}.</p></article>' for entry in entries) or "<p>No digests have been generated yet.</p>"
