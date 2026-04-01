@@ -3,8 +3,7 @@ name: Update arXiv Daily
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 9 * * 1-5'
-    - cron: '0 10 * * 1-5'
+    - cron: '0 4-14 * * 1-5'
 
 permissions:
   contents: write
@@ -14,7 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check 5 AM New York weekday window
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check New York weekday window and daily freshness
         id: gate
         shell: bash
         run: |
@@ -22,18 +24,34 @@ jobs:
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           local_hour="$(TZ=America/New_York date +%H)"
           local_weekday="$(TZ=America/New_York date +%u)"
-          if [ "$local_hour" = "05" ] && [ "$local_weekday" -le 5 ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
+          local_date="$(TZ=America/New_York date +%F)"
+
+          if [ "$local_weekday" -gt 5 ]; then
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping scheduled run at $(TZ=America/New_York date)"
+            echo "Skipping weekend run at $(TZ=America/New_York date)"
+            exit 0
           fi
 
-      - name: Check out repository
-        if: steps.gate.outputs.should_run == 'true'
-        uses: actions/checkout@v4
+          case "$local_hour" in
+            00|01|02|03|04|05|06|07|08|09)
+              ;;
+            *)
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping scheduled run outside the 00-09 New York window at $(TZ=America/New_York date)"
+              exit 0
+              ;;
+          esac
+
+          if [ -f "arxiv_daily/$local_date/index.html" ] && [ -f "arxiv_daily_cornell/$local_date/index.html" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping because both archives already exist for $local_date"
+            exit 0
+          fi
+
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         if: steps.gate.outputs.should_run == 'true'
