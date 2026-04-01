@@ -2,6 +2,11 @@ name: Update arXiv Daily
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/daily-update.yml'
   schedule:
     - cron: '0 4-14 * * 1-5'
 
@@ -20,7 +25,7 @@ jobs:
         id: gate
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "push" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
