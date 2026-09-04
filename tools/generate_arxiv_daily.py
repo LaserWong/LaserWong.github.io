@@ -23,6 +23,8 @@ DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-reasoner"
 DEFAULT_DEEPSEEK_MAX_TOKENS = 3072
 DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 90
+FETCH_ATTEMPTS = 5
+RETRYABLE_HTTP_CODES = {408, 425, 429, 500, 502, 503, 504}
 DEEPSEEK_SYSTEM_PROMPT = """You are a senior physics editor writing concise Physical Review Letters-style summaries in Chinese.
 Write for advanced physics readers.
 Be precise, restrained, information-dense, and faithful to the title and abstract.
@@ -89,10 +91,40 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def fetch_text(url: str, timeout: int = 30) -> str:
+def fetch_text(url: str, timeout: int = 30, attempts: int = FETCH_ATTEMPTS) -> str:
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1")
+
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read().decode("utf-8")
+    safe_url = url.split("?", 1)[0]
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            if error.code not in RETRYABLE_HTTP_CODES or attempt == attempts:
+                raise
+            reason = f"HTTP {error.code}"
+            retry_after = error.headers.get("Retry-After") if error.headers else None
+        except (urllib.error.URLError, TimeoutError) as error:
+            if attempt == attempts:
+                raise
+            reason = str(getattr(error, "reason", error))
+            retry_after = None
+
+        delay = min(2 ** attempt, 30)
+        if retry_after:
+            try:
+                delay = min(max(delay, int(retry_after)), 60)
+            except ValueError:
+                pass
+        log(
+            f"      [network] Fetch failed ({reason}) for {safe_url}; "
+            f"retrying in {delay}s ({attempt}/{attempts})"
+        )
+        time.sleep(delay)
+
+    raise RuntimeError(f"Failed to fetch {safe_url}")
 
 
 def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout: int = 60) -> dict[str, Any]:

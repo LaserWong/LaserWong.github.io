@@ -7,6 +7,10 @@ on:
       - main
     paths:
       - '.github/workflows/daily-update.yml'
+      - 'tools/**'
+      - 'arxiv_daily_config.json'
+      - 'arxiv_daily_cornell_config.json'
+      - 'requirements.txt'
   schedule:
     - cron: '17 4-14 * * 1-5'
 
@@ -19,7 +23,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check New York weekday window and daily freshness
         id: gate
@@ -49,7 +53,7 @@ jobs:
 
       - name: Set up Python
         if: steps.gate.outputs.should_run == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
