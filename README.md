@@ -26,6 +26,27 @@ Use this exact repository name for the personal Pages site:
 
 The local launcher now updates both archives and refreshes the shared landing page.
 
+## Summary providers (original Chinese archive)
+- Primary: OpenAI `gpt-6.1-sol` via the Responses API, with low reasoning effort.
+- Fallback: `deepseek-reasoner` using the existing `DEEPSEEK_API_KEY`.
+- Both providers summarize the title and abstract into three Chinese sentences: work/method, technical or physical advance/results, and implications/outlook. Full-paper reading is not implemented.
+- GPT uses a strict JSON schema, rendered as three numbered sentences. The prompt targets about 256 visible tokens; `openai_max_output_tokens` also covers reasoning and JSON overhead.
+- Quota exhaustion, invalid credentials, and unavailable models disable GPT for the remainder of that run. The next run tries GPT again. Temporary rate limits and network failures receive up to three attempts, then the affected paper goes to DeepSeek.
+- If neither API succeeds, the existing local fallback remains visibly labeled. Each paper records `summary_source`, `summary_model`, and `openai_status`; logs report token usage separately for each provider.
+- The Kim Group generator and abstract display are unchanged.
+
+### Local credentials
+Set `OPENAI_API_KEY` (aliases: `GPTAPI_KY`, `gptapi_ky`) or set `OPENAI_API_KEY_FILE` to a file containing only the key. Environment credentials take priority.
+Alternatively, create the Git-ignored `arxiv_daily_config.local.json` with an `openai_api_key_file` path. Relative paths are resolved from the repository root; do not put key contents in JSON configuration. This local configuration is never needed by GitHub Actions.
+
+### GitHub Actions credentials
+In `LaserWong.github.io` repository Settings > Secrets and variables > Actions, add repository secret `OPENAI_API_KEY` (or `GPTAPI_KY`) and keep `DEEPSEEK_API_KEY`.
+Actions cannot access a key file on your computer. Without the OpenAI repository secret, it continues using DeepSeek. Keys are used only server-side and never embedded in HTML or committed to Git.
+API usage is billed to the corresponding API account.
+
+### Tests
+Run `python -m unittest discover -s tests -v` for offline routing, error handling, credential loading, and summary-format tests. These tests do not use API credits.
+
 ## Bootstrap behavior
 - Requires Python 3.10+
 - Creates a local `.venv`
@@ -43,6 +64,6 @@ The local launcher now updates both archives and refreshes the shared landing pa
 - This keeps the update pinned to 8:00 AM New York time across EST and EDT.
 
 ## Notes
-- `arXiv Daily Archive` keeps the original Chinese interface and translation behavior.
+- `arXiv Daily Archive` keeps the original Chinese interface with GPT-first, DeepSeek-fallback summaries.
 - `arXiv Daily Archive_cornell` keeps the Cornell-style English filtering and ranking.
 - Automatic Python installation may require administrator / sudo permissions depending on the machine.

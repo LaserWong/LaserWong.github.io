@@ -63,9 +63,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Test summary routing
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m unittest discover -s tests -v
+
       - name: Generate both archives
         if: steps.gate.outputs.should_run == 'true'
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.GPTAPI_KY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python -u tools/generate_arxiv_portal.py
       - name: Commit updated output
