@@ -27,13 +27,22 @@ Use this exact repository name for the personal Pages site:
 The local launcher now updates both archives and refreshes the shared landing page.
 
 ## Summary providers (original Chinese archive)
-- Primary: OpenAI `gpt-6.1-sol` via the Responses API, with low reasoning effort.
+- Primary: OpenAI `gpt-6.1-sol` via the Responses API, with `max` reasoning effort.
 - Fallback: `deepseek-reasoner` using the existing `DEEPSEEK_API_KEY`.
-- Both providers summarize the title and abstract into three Chinese sentences: work/method, technical or physical advance/results, and implications/outlook. Full-paper reading is not implemented.
+- Both providers receive the same full-paper text when available and produce three Chinese sentences: work/method, technical or physical advance/results, and implications/outlook. Full-text acquisition or extraction failure automatically switches to the title and abstract, still using GPT first and DeepSeek as fallback.
 - GPT uses a strict JSON schema, rendered as three numbered sentences. The prompt targets about 256 visible tokens; `openai_max_output_tokens` also covers reasoning and JSON overhead.
 - Quota exhaustion, invalid credentials, and unavailable models disable GPT for the remainder of that run. The next run tries GPT again. Temporary rate limits and network failures receive up to three attempts, then the affected paper goes to DeepSeek.
-- If neither API succeeds, the existing local fallback remains visibly labeled. Each paper records `summary_source`, `summary_model`, and `openai_status`; logs report token usage separately for each provider.
+- If neither API succeeds, the existing local abstract-based fallback remains visibly labeled. Each paper records `summary_source`, `summary_model`, `summary_basis`, `summary_reasoning_effort`, and `fulltext_status`. Logs and each day's `usage.json` report token usage separately for each provider.
 - The Kim Group generator and abstract display are unchanged.
+
+### Full-paper acquisition
+- Try arXiv HTML first, preserving LaTeX math, captions, tables and appendices. If HTML is unavailable, download the PDF and extract text from every page using `pypdf` in a subprocess with a 60-second extraction timeout.
+- The models read extracted text, not figure pixels. Scanned PDFs, missing text pages, parse errors, timeouts and unavailable downloads fall back to the abstract. The page shows the actual evidence basis independently from the model/provider.
+- Safety limits: 25 MiB per download, 120 PDF pages, 240,000 extracted characters. Oversized documents fall back to the abstract with a recorded reason; no document is silently truncated and called full-text.
+- Full-text requests are serial and spaced at least three seconds apart. HTTP 403 or 429 suspends further full-text downloads for the run. Successful text is cached under Git-ignored `.cache/arxiv_fulltext/<date>/`; downloaded paper text is not published in the website JSON or HTML.
+- GPT has a 16,384-token output budget including reasoning, and a 300-second request timeout; the visible summary still targets approximately 256 tokens. DeepSeek has an 8,192-token budget and a 180-second timeout. Full-text plus max reasoning will cost more and take longer than abstract-only low reasoning.
+- After a first-paper quota probe, up to four papers call the summary APIs concurrently (`summary_workers`). Full-text downloads remain serialized. The GPT quota/auth/model circuit is shared across workers; already in-flight requests can finish when it opens.
+- Use `python tools/generate_arxiv_portal.py --archive original` to refresh only the Chinese archive and shared portal. Manual GitHub Actions runs expose the same `archive` choice; scheduled runs continue updating both archives. Workflow concurrency is serialized to avoid overlapping long runs.
 
 ### Local credentials
 Set `OPENAI_API_KEY` (aliases: `GPTAPI_KY`, `gptapi_ky`) or set `OPENAI_API_KEY_FILE` to a file containing only the key. Environment credentials take priority.

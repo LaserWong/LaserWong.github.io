@@ -121,13 +121,16 @@ def write_home_page() -> Path:
     return target
 
 
-def run_generators(date_str: str | None = None) -> None:
+def run_generators(date_str: str | None = None, archive: str = "both") -> None:
     original = load_module("generate_arxiv_daily", TOOLS / "generate_arxiv_daily.py")
-    cornell = load_module("generate_arxiv_daily_cornell", TOOLS / "generate_arxiv_daily_cornell.py")
     log("[portal 1/3] Running original arXiv daily generator")
     original.generate(date_str=date_str)
-    log("[portal 2/3] Running Kim Group arXiv daily generator")
-    cornell.generate(date_str=date_str)
+    if archive == "both":
+        cornell = load_module("generate_arxiv_daily_cornell", TOOLS / "generate_arxiv_daily_cornell.py")
+        log("[portal 2/3] Running Kim Group arXiv daily generator")
+        cornell.generate(date_str=date_str)
+    else:
+        log("[portal 2/3] Keeping Kim Group archive unchanged")
     log("[portal 3/3] Writing shared home page")
     write_home_page()
 
@@ -136,6 +139,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate both arXiv archives and the shared portal page.")
     parser.add_argument("--date", help="Target date in YYYY-MM-DD. Defaults to today.")
     parser.add_argument("--home-only", action="store_true", help="Only rebuild the shared home page from existing archive output.")
+    parser.add_argument("--archive", choices=("both", "original"), default="both", help="Select original only to leave Kim Group output unchanged.")
     return parser.parse_args()
 
 
@@ -145,7 +149,7 @@ def main() -> int:
         output = write_home_page()
         print(output)
         return 0
-    run_generators(date_str=args.date)
+    run_generators(date_str=args.date, archive=args.archive)
     print(ROOT / "index.html")
     return 0
 

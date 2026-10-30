@@ -8,7 +8,7 @@ import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import generate_arxiv_daily as daily
@@ -71,10 +71,10 @@ class OpenAITests(ContextTestCase):
         url, payload = self.post.call_args.args
         self.assertEqual(url, "https://api.openai.com/v1/responses")
         self.assertEqual(payload["model"], "gpt-6.1-sol")
-        self.assertEqual(payload["reasoning"], {"effort": "low"})
+        self.assertEqual(payload["reasoning"], {"effort": "max"})
         self.assertFalse(payload["store"])
         self.assertTrue(payload["text"]["format"]["strict"])
-        self.assertEqual(payload["max_output_tokens"], 3072)
+        self.assertEqual(payload["max_output_tokens"], 16384)
         self.assertNotIn("temperature", payload)
 
     def test_success_cache(self):
@@ -91,6 +91,25 @@ class OpenAITests(ContextTestCase):
         summary, _, status = daily.summarize_with_openai("a", "b", {}, "")
         self.assertEqual((summary, status), (None, "no_key"))
         self.post.assert_not_called()
+
+    def test_fulltext_payload_and_cache_include_body_and_effort(self):
+        cache = {}
+        self.call(cache=cache, full_text="Introduction ... Results ... Appendix: final result")
+        payload = self.post.call_args.args[1]
+        evidence = json.loads(payload["input"])
+        self.assertEqual(evidence["basis"], "fulltext")
+        self.assertTrue(evidence["full_text"].endswith("Appendix: final result"))
+        self.assertNotIn("full paper is not available", payload["instructions"])
+        self.call(cache=cache, full_text="Different full paper")
+        self.call(cache=cache, full_text="Different full paper", reasoning_effort="low")
+        self.assertEqual(self.post.call_count, 3)
+
+    def test_abstract_payload_discloses_missing_fulltext(self):
+        self.call()
+        payload = self.post.call_args.args[1]
+        self.assertEqual(json.loads(payload["input"])["basis"], "abstract")
+        self.assertNotIn("full_text", json.loads(payload["input"]))
+        self.assertIn("Only the title and abstract", payload["instructions"])
 
     def test_permanent_errors_do_not_retry_or_log_error_text(self):
         for code, error_code, expected in [
@@ -241,6 +260,38 @@ class RoutingTests(ContextTestCase):
         self.gpt.assert_not_called()
         self.ds.assert_not_called()
 
+    def test_fulltext_is_shared_with_deepseek_after_gpt_quota_failure(self):
+        from unittest.mock import Mock
+        loader = Mock()
+        loader.get.return_value = {"text": "entire extracted body", "status": "ok", "source": "pdf", "url": "https://arxiv.org/pdf/2610.10000", "pages": 6}
+        self.gpt.return_value = (None, USAGE, "quota_exhausted")
+        papers, usage = self.enrich(fulltext_loader=loader)
+        self.assertEqual(self.gpt.call_args.kwargs["full_text"], "entire extracted body")
+        self.assertEqual(self.ds.call_args.kwargs["full_text"], "entire extracted body")
+        self.assertEqual(papers[0]["summary_basis"], "fulltext")
+        self.assertEqual(papers[0]["fulltext_pages"], 6)
+        self.assertNotIn("text", papers[0])
+        self.assertEqual(usage["fulltext_papers"], 1)
+
+    def test_fulltext_failure_still_uses_gpt_with_abstract(self):
+        from unittest.mock import Mock
+        loader = Mock()
+        loader.get.return_value = {"text": "", "status": "pdf:network_failure", "source": "abstract", "url": "", "pages": 0}
+        papers, usage = self.enrich(fulltext_loader=loader)
+        self.assertEqual(self.gpt.call_args.kwargs["full_text"], "")
+        self.assertEqual(papers[0]["summary_basis"], "abstract")
+        self.assertEqual(papers[0]["summary_source"], "openai")
+        self.assertEqual(usage["abstract_only_papers"], 1)
+
+    def test_local_fallback_never_claims_fulltext_summary(self):
+        from unittest.mock import Mock
+        loader = Mock()
+        loader.get.return_value = {"text": "entire extracted body", "status": "ok", "source": "html", "url": "https://arxiv.org/html/2610.10000", "pages": 0}
+        self.gpt.return_value = (None, USAGE, "incomplete")
+        self.ds.return_value = (None, USAGE, "request_failure")
+        papers, _ = self.enrich(fulltext_loader=loader)
+        self.assertEqual(papers[0]["summary_basis"], "abstract")
+
 
 class CredentialTests(ContextTestCase):
     def setUp(self):
@@ -274,8 +325,11 @@ class GenerationTests(ContextTestCase):
             kim.write_text("unchanged", encoding="utf-8")
             self.enterContext(patch.object(daily, "ROOT", root))
             self.enterContext(patch.object(daily, "load_config", return_value={
-                "categories": ["cond-mat"], "enable_openai_summary": True,
+                "categories": ["cond-mat"], "enable_openai_summary": True, "enable_fulltext_summary": True,
             }))
+            loader = Mock()
+            loader.get.return_value = {"text": "PRIVATE_FULLTEXT_BODY_SENTINEL", "status": "ok", "source": "html", "url": "https://arxiv.org/html/test", "pages": 0}
+            self.enterContext(patch.object(daily, "FullTextLoader", return_value=loader))
             self.enterContext(patch.object(daily, "load_openai_api_key", return_value="test-key"))
             self.enterContext(patch.object(daily, "fetch_text", return_value="html"))
             self.enterContext(patch.object(daily, "parse_new_submissions", return_value=[PAPER]))
@@ -286,12 +340,90 @@ class GenerationTests(ContextTestCase):
             papers = json.loads(target.with_name("papers.json").read_text(encoding="utf-8-sig"))
             html = target.read_text(encoding="utf-8-sig")
             self.assertEqual(papers[0]["summary_source"], "openai")
+            self.assertEqual(papers[0]["summary_basis"], "fulltext")
             self.assertEqual(papers[0]["summary"], SUMMARY)
             self.assertIn('paper.summary_source === "openai"', html)
             self.assertIn("<details>", html)
             self.assertNotIn("test-key", html)
+            self.assertNotIn("PRIVATE_FULLTEXT_BODY_SENTINEL", html)
+            self.assertNotIn("PRIVATE_FULLTEXT_BODY_SENTINEL", json.dumps(papers))
             self.assertEqual(post.call_count, 1)
             self.assertEqual(kim.read_text(encoding="utf-8"), "unchanged")
+            self.assertTrue(target.with_name("usage.json").exists())
+
+
+class PortalScopeTests(unittest.TestCase):
+    def test_original_only_does_not_load_kim_generator(self):
+        import generate_arxiv_portal as portal
+        original = Mock()
+        with patch.object(portal, "load_module", return_value=original) as load:
+            with patch.object(portal, "write_home_page"), contextlib.redirect_stdout(io.StringIO()):
+                portal.run_generators("2026-10-30", archive="original")
+        self.assertEqual(load.call_count, 1)
+        self.assertEqual(load.call_args.args[0], "generate_arxiv_daily")
+        original.generate.assert_called_once_with(date_str="2026-10-30")
+
+    def test_scheduled_default_still_updates_both(self):
+        import generate_arxiv_portal as portal
+        original, kim = Mock(), Mock()
+        with patch.object(portal, "load_module", side_effect=[original, kim]):
+            with patch.object(portal, "write_home_page"), contextlib.redirect_stdout(io.StringIO()):
+                portal.run_generators("2026-10-30")
+        original.generate.assert_called_once()
+        kim.generate.assert_called_once()
+
+
+class ParallelSummaryTests(ContextTestCase):
+    def setUp(self):
+        self.enterContext(patch.object(daily, "fetch_authors", return_value=[]))
+        self.enterContext(contextlib.redirect_stdout(io.StringIO()))
+
+    def test_quota_probe_routes_rest_to_deepseek_without_more_gpt_calls(self):
+        papers = [{**PAPER, "id": f"2610.{10000 + i}"} for i in range(8)]
+        with patch.object(daily, "summarize_with_openai", return_value=(None, {**USAGE, "requests": 1}, "quota_exhausted")) as gpt:
+            with patch.object(daily, "summarize_with_deepseek", return_value=(SUMMARY, USAGE, "ok")) as ds:
+                result, usage = daily.enrich_papers_parallel(papers, enable_translation=False, enable_openai_summary=True, openai_api_key="gpt", enable_deepseek_summary=True, deepseek_api_key="ds")
+        self.assertEqual(gpt.call_count, 1)
+        self.assertEqual(ds.call_count, 8)
+        self.assertEqual(usage["openai_requests"], 1)
+        self.assertEqual(usage["openai_disabled"], 1)
+        self.assertEqual([p["id"] for p in result], [p["id"] for p in papers])
+
+    def test_parallel_usage_and_order(self):
+        import threading
+        import time
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+        def generate(*args, **kwargs):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return SUMMARY, {**USAGE, "requests": 1}, "ok"
+        papers = [{**PAPER, "id": f"2610.{10000 + i}"} for i in range(9)]
+        with patch.object(daily, "summarize_with_openai", side_effect=generate):
+            result, usage = daily.enrich_papers_parallel(papers, workers=20, enable_translation=False, enable_openai_summary=True, openai_api_key="gpt")
+        self.assertGreater(peak, 1)
+        self.assertLessEqual(peak, 4)
+        self.assertEqual(usage["openai_total_tokens"], 450)
+        self.assertEqual(usage["openai_requests"], 9)
+        self.assertEqual([p["id"] for p in result], [p["id"] for p in papers])
+
+    def test_empty_input_is_supported(self):
+        result, usage = daily.enrich_papers_parallel([], enable_translation=False)
+        self.assertEqual(result, [])
+        self.assertEqual(usage["openai_requests"], 0)
+
+
+class RenderingSafetyTests(unittest.TestCase):
+    def test_paper_text_cannot_close_inline_script(self):
+        html = daily.build_daily_html("2026-10-30", [{**PAPER, "summary": "</script><img src=x onerror=alert(1)>"}])
+        self.assertEqual(html.count("</script>"), 1)
+        self.assertNotIn("<img src=x", html)
 
 
 if __name__ == "__main__":

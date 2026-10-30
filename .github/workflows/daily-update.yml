@@ -2,6 +2,14 @@ name: Update arXiv Daily
 
 on:
   workflow_dispatch:
+    inputs:
+      archive:
+        description: Archives to regenerate
+        type: choice
+        options:
+          - both
+          - original
+        default: both
   push:
     branches:
       - main
@@ -16,6 +24,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: arxiv-daily-update
+  cancel-in-progress: false
 
 jobs:
   update-digest:
@@ -72,7 +84,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.GPTAPI_KY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: python -u tools/generate_arxiv_portal.py
+        run: python -u tools/generate_arxiv_portal.py --archive "${{ inputs.archive || 'both' }}"
       - name: Commit updated output
         if: steps.gate.outputs.should_run == 'true'
         run: |
