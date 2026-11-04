@@ -350,7 +350,7 @@ def summarize_with_openai(
     model: str = DEFAULT_OPENAI_MODEL,
     max_output_tokens: int = DEFAULT_OPENAI_MAX_OUTPUT_TOKENS,
     timeout_seconds: int = DEFAULT_OPENAI_TIMEOUT_SECONDS,
-    reasoning_effort: str = "max",
+    reasoning_effort: str = "high",
     *,
     full_text: str = "",
 ) -> tuple[str | None, dict[str, int], str]:
@@ -900,7 +900,7 @@ def enrich_papers(
     openai_model: str = DEFAULT_OPENAI_MODEL,
     openai_max_output_tokens: int = DEFAULT_OPENAI_MAX_OUTPUT_TOKENS,
     openai_timeout_seconds: int = DEFAULT_OPENAI_TIMEOUT_SECONDS,
-    openai_reasoning_effort: str = "max",
+    openai_reasoning_effort: str = "high",
     fulltext_loader: FullTextLoader | None = None,
     _openai_circuit: OpenAICircuit | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -1164,7 +1164,7 @@ def build_daily_html(date_str: str, papers: list[dict[str, Any]]) -> str:
       <h1>Daily ArXiv Selection</h1>
       <p>
         数据来自 arXiv 当天的 <code>cond-mat</code>、<code>hep-th</code>、<code>math-ph</code>、<code>quant-ph</code> 四个分类页，口径限定为 <code>New submissions</code>。
-        优先读取 arXiv 全文文本，由 GPT-6.1 Sol（max）生成三句话中文总结；全文获取或提取失败时自动使用摘要，并标明依据。GPT 不可用时使用 DeepSeek reasoner，两者均不可用时保留本地回退。全文文本包含可提取的公式和图注，尚未直接分析图片；下拉可以查看英文原版摘要。
+        优先读取 arXiv 全文文本，由 GPT-6.1 Sol（high）生成三句话中文总结；全文获取或提取失败时自动使用摘要，并标明依据。GPT 不可用时使用 DeepSeek reasoner，两者均不可用时保留本地回退。全文文本包含可提取的公式和图注，尚未直接分析图片；下拉可以查看英文原版摘要。
       </p>
       <div class="stats" id="stats"></div>
     </section>
@@ -1395,7 +1395,7 @@ def generate(date_str: str | None = None) -> Path:
         log("[info] OpenAI key is missing; using the configured fallback")
     if deepseek_summary_enabled and not deepseek_api_key:
         log("[info] DEEPSEEK_API_KEY is missing; DeepSeek fallback is unavailable")
-    log(f"[4/6] Enriching papers (summary={summary_mode}, effort={config.get('openai_reasoning_effort', 'max')}, fulltext={'on' if fulltext_loader else 'off'}, authors=on)")
+    log(f"[4/6] Enriching papers (summary={summary_mode}, effort={config.get('openai_reasoning_effort', 'high')}, fulltext={'on' if fulltext_loader else 'off'}, authors=on)")
     papers, deepseek_usage = enrich_papers_parallel(
         papers=filtered,
         workers=int(config.get("summary_workers", 4)),
@@ -1410,7 +1410,7 @@ def generate(date_str: str | None = None) -> Path:
         openai_model=openai_model,
         openai_max_output_tokens=int(config.get("openai_max_output_tokens", DEFAULT_OPENAI_MAX_OUTPUT_TOKENS)),
         openai_timeout_seconds=int(config.get("openai_timeout_seconds", DEFAULT_OPENAI_TIMEOUT_SECONDS)),
-        openai_reasoning_effort=str(config.get("openai_reasoning_effort", "max")),
+        openai_reasoning_effort=str(config.get("openai_reasoning_effort", "high")),
         fulltext_loader=fulltext_loader,
     )
     papers.sort(key=lambda item: (categories.index(item["category"]), item["id"]))
@@ -1435,7 +1435,7 @@ def generate(date_str: str | None = None) -> Path:
     log(f"[reading] Fulltext={deepseek_usage['fulltext_papers']} abstract_only={deepseek_usage['abstract_only_papers']}")
     (day_dir / "usage.json").write_text(json.dumps({
         "openai_model": openai_model,
-        "openai_reasoning_effort": config.get("openai_reasoning_effort", "max"),
+        "openai_reasoning_effort": config.get("openai_reasoning_effort", "high"),
         "usage": deepseek_usage,
     }, indent=2), encoding="utf-8")
     (day_dir / "papers.json").write_text(json.dumps(papers, ensure_ascii=False, indent=2), encoding="utf-8-sig")

@@ -27,7 +27,7 @@ Use this exact repository name for the personal Pages site:
 The local launcher now updates both archives and refreshes the shared landing page.
 
 ## Summary providers (original Chinese archive)
-- Primary: OpenAI `gpt-6.1-sol` via the Responses API, with `max` reasoning effort.
+- Primary: OpenAI `gpt-6.1-sol` via the Responses API, with `high` reasoning effort.
 - Fallback: `deepseek-reasoner` using the existing `DEEPSEEK_API_KEY`.
 - Both providers receive the same full-paper text when available and produce three Chinese sentences: work/method, technical or physical advance/results, and implications/outlook. Full-text acquisition or extraction failure automatically switches to the title and abstract, still using GPT first and DeepSeek as fallback.
 - GPT uses a strict JSON schema, rendered as three numbered sentences. The prompt targets about 256 visible tokens; `openai_max_output_tokens` also covers reasoning and JSON overhead.
@@ -40,7 +40,7 @@ The local launcher now updates both archives and refreshes the shared landing pa
 - The models read extracted text, not figure pixels. Scanned PDFs, missing text pages, parse errors, timeouts and unavailable downloads fall back to the abstract. The page shows the actual evidence basis independently from the model/provider.
 - Safety limits: 25 MiB per download, 120 PDF pages, 240,000 extracted characters. Oversized documents fall back to the abstract with a recorded reason; no document is silently truncated and called full-text.
 - Full-text requests are serial and spaced at least three seconds apart. HTTP 403 or 429 suspends further full-text downloads for the run. Successful text is cached under Git-ignored `.cache/arxiv_fulltext/<date>/`; downloaded paper text is not published in the website JSON or HTML.
-- GPT has a 16,384-token output budget including reasoning, and a 300-second request timeout; the visible summary still targets approximately 256 tokens. DeepSeek has an 8,192-token budget and a 180-second timeout. Full-text plus max reasoning will cost more and take longer than abstract-only low reasoning.
+- GPT has a 16,384-token output budget including reasoning, and a 300-second request timeout; the visible summary still targets approximately 256 tokens. DeepSeek has an 8,192-token budget and a 180-second timeout. Full-text reading still adds input tokens; `high` replaces `max` to reduce reasoning usage. Historical pages retain their actual reasoning-effort labels.
 - After a first-paper quota probe, up to four papers call the summary APIs concurrently (`summary_workers`). Full-text downloads remain serialized. The GPT quota/auth/model circuit is shared across workers; already in-flight requests can finish when it opens.
 - Use `python tools/generate_arxiv_portal.py --archive original` to refresh only the Chinese archive and shared portal. Manual GitHub Actions runs expose the same `archive` choice; scheduled runs continue updating both archives. Workflow concurrency is serialized to avoid overlapping long runs.
 

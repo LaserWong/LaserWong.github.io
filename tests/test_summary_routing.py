@@ -71,7 +71,7 @@ class OpenAITests(ContextTestCase):
         url, payload = self.post.call_args.args
         self.assertEqual(url, "https://api.openai.com/v1/responses")
         self.assertEqual(payload["model"], "gpt-6.1-sol")
-        self.assertEqual(payload["reasoning"], {"effort": "max"})
+        self.assertEqual(payload["reasoning"], {"effort": "high"})
         self.assertFalse(payload["store"])
         self.assertTrue(payload["text"]["format"]["strict"])
         self.assertEqual(payload["max_output_tokens"], 16384)
@@ -211,6 +211,8 @@ class RoutingTests(ContextTestCase):
         papers, usage = self.enrich()
         self.assertEqual(papers[0]["summary_source"], "openai")
         self.assertEqual(papers[0]["summary_model"], "gpt-6.1-sol")
+        self.assertEqual(papers[0]["summary_reasoning_effort"], "high")
+        self.assertEqual(self.gpt.call_args.kwargs["reasoning_effort"], "high")
         self.assertEqual(usage["openai_total_tokens"], 50)
         self.assertEqual(usage["total_tokens"], 0)
         self.ds.assert_not_called()
@@ -317,6 +319,14 @@ class CredentialTests(ContextTestCase):
 
 
 class GenerationTests(ContextTestCase):
+    def test_committed_config_uses_sol_high_with_existing_fallbacks(self):
+        config = json.loads(daily.CONFIG_PATH.read_text(encoding="utf-8-sig"))
+        self.assertEqual(config["openai_model"], "gpt-6.1-sol")
+        self.assertEqual(config["openai_reasoning_effort"], "high")
+        self.assertTrue(config["enable_fulltext_summary"])
+        self.assertTrue(config["enable_deepseek_summary"])
+        self.assertEqual(config["deepseek_model"], "deepseek-reasoner")
+
     def test_generate_writes_gpt_metadata_without_touching_kim_archive(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -341,6 +351,8 @@ class GenerationTests(ContextTestCase):
             html = target.read_text(encoding="utf-8-sig")
             self.assertEqual(papers[0]["summary_source"], "openai")
             self.assertEqual(papers[0]["summary_basis"], "fulltext")
+            self.assertEqual(papers[0]["summary_reasoning_effort"], "high")
+            self.assertEqual(post.call_args.args[1]["reasoning"], {"effort": "high"})
             self.assertEqual(papers[0]["summary"], SUMMARY)
             self.assertIn('paper.summary_source === "openai"', html)
             self.assertIn("<details>", html)
@@ -350,6 +362,8 @@ class GenerationTests(ContextTestCase):
             self.assertEqual(post.call_count, 1)
             self.assertEqual(kim.read_text(encoding="utf-8"), "unchanged")
             self.assertTrue(target.with_name("usage.json").exists())
+            usage = json.loads(target.with_name("usage.json").read_text(encoding="utf-8"))
+            self.assertEqual(usage["openai_reasoning_effort"], "high")
 
 
 class PortalScopeTests(unittest.TestCase):
