@@ -87,6 +87,37 @@ class OpenAITests(ContextTestCase):
         self.call(cache=cache, model="another-model")
         self.assertEqual(self.post.call_count, 2)
 
+    def test_non_defensive_rules_are_sent_for_fulltext_and_abstract(self):
+        for full_text in ("", "Methods ... proved result ... numerical verification ..."):
+            with self.subTest(fulltext=bool(full_text)):
+                self.call(full_text=full_text)
+                payload = self.post.call_args.args[1]
+                instructions = payload["instructions"]
+                self.assertIn(daily.OPENAI_SYSTEM_PROMPT, instructions)
+                self.assertIn("Mandatory non-defensive writing rules", instructions)
+                self.assertIn("State derived, proved, or numerically verified results directly", instructions)
+                self.assertIn("retain every condition needed for the result's validity or scope", instructions)
+                self.assertIn("retain scientifically meaningful negation", instructions)
+                self.assertIn("future direction only if the paper itself proposes it", instructions)
+                self.assertIn("check all twelve rules", instructions)
+                self.assertNotIn("state limitations when needed", instructions)
+                self.assertNotIn("Mandatory non-defensive writing rules", payload["input"])
+
+    def test_prompt_change_invalidates_cached_summary(self):
+        cache = {}
+        self.call(cache=cache)
+        with patch.object(daily, "OPENAI_SYSTEM_PROMPT", daily.OPENAI_SYSTEM_PROMPT + "\nUpdated editorial instruction."):
+            self.assertEqual(self.call(cache=cache)[2], "ok")
+            self.assertEqual(self.call(cache=cache)[2], "cached")
+        self.assertEqual(self.post.call_count, 2)
+
+    def test_scientifically_meaningful_negation_is_preserved(self):
+        fields = {**FIELDS, "selling_point": "\u9009\u62e9\u5b9a\u5219\u7981\u6b62\u8be5\u8dc3\u8fc1\uff0c\u8df3\u8dc3\u77e9\u9635\u5143\u4e25\u683c\u4e3a\u96f6\u3002"}
+        self.post.return_value = response(fields=fields)
+        summary, _, status = self.call()
+        self.assertEqual(status, "ok")
+        self.assertIn(fields["selling_point"], summary)
+
     def test_no_key_makes_no_request(self):
         summary, _, status = daily.summarize_with_openai("a", "b", {}, "")
         self.assertEqual((summary, status), (None, "no_key"))
